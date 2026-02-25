@@ -137,6 +137,10 @@ def generate_structured_report(case_text: str) -> dict[str, object]:
         raise RAGConfigError("Failed to generate structured report.") from exc
 
     parsed = _parse_json_object(raw_output)
+    if parsed is None:
+        parsed = _retry_structured_report_json(llm=llm, raw_output=raw_output)
+    if parsed is None:
+        raise RAGConfigError("Structured report is not valid JSON.")
     normalized = _normalize_structured_report(parsed)
     return normalized
 
@@ -171,38 +175,93 @@ def extract_legal_keywords(case_text: str) -> list[str]:
     return _rule_based_legal_keywords(case_text=case_text)
 
 
-def _parse_json_object(raw_output: str) -> dict[str, object]:
+def _parse_json_object(raw_output: str) -> dict[str, object] | None:
     """Parse a JSON object from raw model output."""
     if not raw_output:
-        raise RAGConfigError("Structured report output is empty.")
+        return None
 
-    try:
-        parsed = json.loads(raw_output)
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", raw_output, flags=re.DOTALL)
-        if not match:
-            raise RAGConfigError("Structured report is not valid JSON.")
+    candidates = [raw_output]
+
+    fenced_match = re.search(
+        r"```(?:json)?\s*(\{.*?\})\s*```",
+        raw_output,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    if fenced_match:
+        candidates.append(fenced_match.group(1))
+
+    brace_match = re.search(r"\{.*\}", raw_output, flags=re.DOTALL)
+    if brace_match:
+        candidates.append(brace_match.group(0))
+
+    for candidate in candidates:
         try:
-            parsed = json.loads(match.group(0))
-        except json.JSONDecodeError as exc:
-            raise RAGConfigError("Structured report JSON parsing failed.") from exc
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            repaired = _repair_json_text(candidate)
+            if not repaired:
+                continue
+            try:
+                parsed = json.loads(repaired)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                continue
 
-    if not isinstance(parsed, dict):
-        raise RAGConfigError("Structured report must be a JSON object.")
-    return parsed
+    return None
+
+
+def _repair_json_text(text: str) -> str:
+    """Repair common JSON defects produced by LLMs."""
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+
+    # Normalize smart quotes.
+    cleaned = (
+        cleaned.replace("“", '"')
+        .replace("”", '"')
+        .replace("‘", "'")
+        .replace("’", "'")
+    )
+    # Convert single-quoted keys/values into double-quoted JSON.
+    cleaned = re.sub(r"(?<!\\)'", '"', cleaned)
+    # Remove trailing commas.
+    cleaned = re.sub(r",\s*([}\]])", r"\1", cleaned)
+    return cleaned
+
+
+def _retry_structured_report_json(llm: object, raw_output: str) -> dict[str, object] | None:
+    """Retry by asking the LLM to reformat raw output into strict JSON."""
+    fix_prompt = (
+        "Convert the following text into ONLY valid JSON with exactly these keys: "
+        'case_title, court, legal_issue, relevant_sections, limitation_analysis, '
+        'penalty, judgement, key_principles. '
+        'Use string values, and lists for relevant_sections/key_principles. '
+        'If missing, use \"Not Specified\" and [\"Not Specified\"]. '
+        "Return only JSON.\n\n"
+        f"Text:\n{raw_output}"
+    )
+    try:
+        fixed_output = str(llm.invoke(fix_prompt)).strip()
+    except Exception:
+        return None
+    return _parse_json_object(fixed_output)
 
 
 def _normalize_structured_report(parsed: dict[str, object]) -> dict[str, object]:
     """Ensure structured report has exact required keys and value types."""
     report: dict[str, object] = {
-        "case_title": "",
-        "court": "",
-        "legal_issue": "",
-        "relevant_sections": [],
-        "limitation_analysis": "",
-        "penalty": "",
-        "judgement": "",
-        "key_principles": [],
+        "case_title": "Not Specified",
+        "court": "Not Specified",
+        "legal_issue": "Not Specified",
+        "relevant_sections": ["Not Specified"],
+        "limitation_analysis": "Not Specified",
+        "penalty": "Not Specified",
+        "judgement": "Not Specified",
+        "key_principles": ["Not Specified"],
     }
 
     for key in report:
@@ -210,9 +269,11 @@ def _normalize_structured_report(parsed: dict[str, object]) -> dict[str, object]
             continue
         value = parsed[key]
         if key in {"relevant_sections", "key_principles"}:
-            report[key] = _coerce_to_string_list(value)
+            values = _coerce_to_string_list(value)
+            report[key] = values if values else ["Not Specified"]
         else:
-            report[key] = "" if value is None else str(value).strip()
+            text = "" if value is None else str(value).strip()
+            report[key] = text if text else "Not Specified"
 
     return report
 

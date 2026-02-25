@@ -1,4 +1,4 @@
-"""Prompt templates used across the RAG module."""
+"""Centralized prompt templates for the Legal AI RAG module."""
 
 from langchain.prompts import PromptTemplate
 
@@ -6,55 +6,93 @@ from langchain.prompts import PromptTemplate
 SUMMARY_PROMPT = PromptTemplate(
     input_variables=["case_text"],
     template=(
-        "You are a legal assistant specializing in Section 138 of the "
-        "Negotiable Instruments Act (India).\n\n"
-        "Read the case text and produce a concise, well-structured summary "
-        "with exactly these sections:\n"
-        "1. Facts\n"
-        "2. Legal Issue\n"
-        "3. Court Reasoning\n"
-        "4. Final Judgment\n\n"
-        "Keep the summary factual and legally precise. Do not add assumptions.\n\n"
-        "Case Text:\n{case_text}"
+        "You are a legal drafting assistant.\n"
+        "Read the provided case text and produce a concise summary in formal legal tone.\n\n"
+        "Strict rules:\n"
+        "1. Output only these four section headings in this exact order:\n"
+        "   Facts\n"
+        "   Legal Issue\n"
+        "   Court Reasoning\n"
+        "   Final Judgment\n"
+        "2. Do NOT include prefaces, disclaimers, or assistant commentary.\n"
+        "3. Do NOT mention being an AI or assistant.\n"
+        "4. Do NOT add practical advice or personal opinions.\n"
+        "5. Keep content factual and derived only from the case text.\n\n"
+        "Case Text:\n{case_text}\n"
     ),
 )
+"""Purpose: Produce strict, formal summary output with required legal sections only."""
 
 
 STRUCTURED_REPORT_PROMPT = PromptTemplate(
     input_variables=["case_text"],
     template=(
-        "You are a legal analyst.\n"
-        "Analyze the following case text and return ONLY a strict JSON object.\n"
-        "Do not include markdown, code fences, explanations, or extra keys.\n\n"
-        "The JSON must contain exactly these keys:\n"
-        "case_title\n"
-        "court\n"
-        "legal_issue\n"
-        "relevant_sections\n"
-        "limitation_analysis\n"
-        "penalty\n"
-        "judgement\n"
-        "key_principles\n\n"
-        "Rules:\n"
-        '- "relevant_sections" must be a JSON array of strings.\n'
-        '- "key_principles" must be a JSON array of strings.\n'
-        '- If any value is unavailable, use an empty string or empty array.\n\n'
-        "Case Text:\n{case_text}"
+        "You are a legal information extraction engine.\n"
+        "Extract the required fields from the case text.\n\n"
+        "Output requirements:\n"
+        "1. Return ONLY valid JSON.\n"
+        "2. No markdown, no code fences, no explanations, no extra text.\n"
+        "3. Use exactly these keys and no additional keys:\n"
+        '   "case_title", "court", "legal_issue", "relevant_sections",\n'
+        '   "limitation_analysis", "penalty", "judgement", "key_principles"\n'
+        '4. Value types:\n'
+        '   - "relevant_sections": array of strings\n'
+        '   - "key_principles": array of strings\n'
+        "   - all other fields: string\n"
+        '5. If a field is not found, use "Not Specified".\n'
+        '6. If list fields are not found, use ["Not Specified"].\n\n'
+        "Return JSON in this exact schema:\n"
+        "{{\n"
+        '  "case_title": "string",\n'
+        '  "court": "string",\n'
+        '  "legal_issue": "string",\n'
+        '  "relevant_sections": ["string"],\n'
+        '  "limitation_analysis": "string",\n'
+        '  "penalty": "string",\n'
+        '  "judgement": "string",\n'
+        '  "key_principles": ["string"]\n'
+        "}}\n\n"
+        "Case Text:\n{case_text}\n"
     ),
 )
+"""Purpose: Enforce strict JSON-only structured legal report generation."""
 
 
 KEYWORD_EXTRACTION_PROMPT = PromptTemplate(
     input_variables=["case_text"],
     template=(
-        "You are a legal text analyzer.\n"
-        "Extract important legal terminologies from the following case text.\n"
-        "Return ONLY a valid Python list of strings.\n"
-        "Do not include any explanation, markdown, or extra text.\n"
-        "Include concise, non-duplicate legal terms only.\n\n"
-        "Case Text:\n{case_text}"
+        "You are a legal terminology extraction engine.\n"
+        "Extract only valid legal terminologies from the case text.\n\n"
+        "Strict output rules:\n"
+        "1. Return ONLY a valid Python list of strings.\n"
+        '2. Output format must be exactly like: ["Term1", "Term2", "Term3"].\n'
+        "3. Maximum 12 terms.\n"
+        "4. Remove duplicates.\n"
+        "5. No explanation, no markdown, no extra text.\n\n"
+        "Include ONLY terms that are legal in nature, such as:\n"
+        "- Statutory references (e.g., Section 138 NI Act)\n"
+        "- Legal doctrines\n"
+        "- Offence names\n"
+        "- Procedural legal terms\n"
+        "- Judicial principles\n"
+        "- Legal presumptions\n"
+        "- Limitation period references\n"
+        "- Burden of proof concepts\n"
+        "- Legally enforceable debt\n"
+        "- Dishonour of cheque\n\n"
+        "Exclude ALL non-legal/noise content, including:\n"
+        "- Page numbers\n"
+        "- Dates\n"
+        "- URLs and website references (e.g., Indian Kanoon, http, https, www)\n"
+        "- Case numbers\n"
+        "- Names of parties/persons/entities\n"
+        "- Generic words (e.g., however, thus, digitally)\n"
+        "- Formatting artifacts\n\n"
+        "If a term is not a legal doctrine, statutory reference, or legal principle, do NOT include it.\n\n"
+        "Case Text:\n{case_text}\n"
     ),
 )
+"""Purpose: Extract clean legal keywords only, while filtering common noise."""
 
 
 __all__ = [
