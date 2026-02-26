@@ -1,4 +1,4 @@
-﻿import { apiClient, isMockApiEnabled } from "./authApi";
+import { apiClient, isMockApiEnabled } from "./authApi";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -36,28 +36,6 @@ const mockCases = [
     },
     caseFileUrl: "https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf",
   },
-  {
-    id: "case-138-002",
-    title: "Nexa Metals vs Vardhan Exports",
-    chequeAmount: 900000,
-    fineAmount: 950000,
-    jurisdiction: "Mumbai",
-    ranking: "Medium",
-    courtLevel: "High Court",
-    reasonForDishonour: "Account Closed",
-    noticeCompliance: "Compliant",
-    limitationPeriod: "Within Limitation",
-    summary:
-      "Cheque return reason recorded as Account Closed. Court held closure equivalent to insufficiency for Section 138 proceedings.",
-    keyPoints: ["Account closure treated as dishonour", "Demand notice valid", "Appeal dismissed"],
-    structuredReport: {
-      facts: ["Cheque amount: INR 9,00,000", "Account status: Closed before presentation"],
-      legalIssues: ["Applicability of Section 138 where account is closed"],
-      judgment: "Conviction maintained with modified sentence.",
-      citations: ["(1998) 3 SCC 249"],
-    },
-    caseFileUrl: "https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf",
-  },
 ];
 
 const applyFilters = (cases, query = {}, filters = {}) => {
@@ -78,6 +56,17 @@ const applyFilters = (cases, query = {}, filters = {}) => {
   });
 };
 
+const toSearchPayload = (query = {}) => ({
+  cheque_amount: query.chequeAmount ? Number(query.chequeAmount) : undefined,
+  dishonor_reason: query.reasonForDishonour || undefined,
+  notice_period: undefined,
+  nature_of_debt: undefined,
+  court: query.courtLevel || undefined,
+  year: undefined,
+  bench: undefined,
+  file_upload_flag: undefined,
+});
+
 export const searchCases = async (query, filters) => {
   if (isMockApiEnabled) {
     await sleep(600);
@@ -86,13 +75,21 @@ export const searchCases = async (query, filters) => {
     return {
       total: result.length,
       items: result,
-      // Example shape from backend:
-      // { total: number, items: [{ id, title, summary, structuredReport, caseFileUrl, keyPoints }] }
     };
   }
 
-  const { data } = await apiClient.post("/search/cases", { query, filters });
-  return data;
+  const { data } = await apiClient.post("/search", toSearchPayload(query));
+  const rows = data?.results ?? [];
+
+  return {
+    total: data?.count ?? data?.total ?? rows.length,
+    items: rows.map((row) => ({
+      id: row.case_id,
+      title: row.case_title || `Case #${row.case_id}`,
+      summary: row.short_snippet || "",
+      tags: [row.court, row.year].filter(Boolean),
+    })),
+  };
 };
 
 export const getCaseById = async (id) => {
@@ -106,5 +103,12 @@ export const getCaseById = async (id) => {
   }
 
   const { data } = await apiClient.get(`/search/cases/${id}`);
-  return data;
+  return {
+    id,
+    title: `Case #${id}`,
+    summary: data?.summary || "",
+    structuredReport: data?.structured_report || {},
+    caseFileUrl: data?.pdf_path || null,
+    keyPoints: [],
+  };
 };

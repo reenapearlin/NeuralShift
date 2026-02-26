@@ -1,49 +1,56 @@
-import os
-import shutil
+from __future__ import annotations
+
 from datetime import datetime
-from fastapi import UploadFile, HTTPException
+from pathlib import Path
+import re
+import shutil
+
+from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
-from app.utils.file_parser import extract_text_from_pdf
+from app.config.settings import get_settings
 from app.models.casefile import CaseFile
+from app.models.enums import CaseStatus
 
 
-# Safe base path
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STORAGE_FOLDER = os.path.join(BASE_DIR, "storage")
+def _safe_filename(filename: str) -> str:
+    stem = Path(filename).stem
+    suffix = Path(filename).suffix.lower() or ".pdf"
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._")
+    if not cleaned:
+        cleaned = "casefile"
+    return f"{cleaned}{suffix}"
 
 
-def save_uploaded_file(file: UploadFile, db: Session):
-    """
-    Save uploaded file, extract text, and store metadata in DB.
-    """
+def save_uploaded_file(file: UploadFile, db: Session, uploaded_by: int) -> dict[str, str | int]:
+    """Save uploaded PDF and create casefile record with relative file path."""
 
-    # Allow only PDF
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files allowed.")
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
 
-    # Auto create storage folder
-    os.makedirs(STORAGE_FOLDER, exist_ok=True)
+    settings = get_settings()
+    storage_dir = Path(settings.CASEFILES_ROOT_DIR)
+    storage_dir.mkdir(parents=True, exist_ok=True)
 
-    # Unique filename
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    safe_filename = f"{timestamp}_{file.filename}"
-    file_path = os.path.join(STORAGE_FOLDER, safe_filename)
+    safe_name = _safe_filename(file.filename)
+    target = storage_dir / safe_name
+
+    if target.exists():
+        stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        target = storage_dir / f"{target.stem}_{stamp}{target.suffix}"
 
     try:
-        # Save file
-        with open(file_path, "wb") as buffer:
+        with target.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        # Extract text
-        extracted_text = extract_text_from_pdf(file_path)
+        relative_path = f"casefiles/{target.name}"
+        case_title = Path(file.filename).stem.replace("_", " ").strip()
 
-        # Create DB entry
         new_case = CaseFile(
-            filename=safe_filename,
-            file_path=file_path,
-            extracted_text=extracted_text,
-            status="PENDING"
+            case_title=case_title,
+            file_path=relative_path,
+            status=CaseStatus.PENDING,
+            uploaded_by=uploaded_by,
         )
 
         db.add(new_case)
@@ -52,9 +59,12 @@ def save_uploaded_file(file: UploadFile, db: Session):
 
         return {
             "case_id": new_case.id,
-            "filename": new_case.filename,
-            "status": new_case.status
+            "case_title": new_case.case_title,
+            "file_path": new_case.file_path,
+            "status": new_case.status.value,
         }
-
-    except Exception:
-        raise HTTPException(status_code=500, detail="File upload failed.")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="File upload failed.") from exc

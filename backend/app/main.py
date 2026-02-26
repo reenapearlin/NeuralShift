@@ -1,16 +1,42 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.config.database import Base, engine
 from app.config.settings import get_settings
 from app.models import casefile, logs, metadata, report, user  # noqa: F401
 from app.routes.admin_routes import router as admin_router
 from app.routes.auth_routes import router as auth_router
-from app.routes.report_routes import router as report_router
 from app.routes.upload_routes import router as upload_router
+
+try:
+    from app.routes.report_routes import router as report_router
+except Exception:
+    report_router = None
+
+try:
+    from app.routes.search_routes import router as search_router
+except Exception:
+    search_router = None
 
 
 settings = get_settings()
 app = FastAPI(title=settings.PROJECT_NAME)
+
+# Allow local frontend apps to call backend APIs during development.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:5175",
+        "http://127.0.0.1:5175",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.on_event("startup")
@@ -20,8 +46,13 @@ def on_startup() -> None:
 
 app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
 app.include_router(admin_router, prefix=settings.API_V1_PREFIX)
-app.include_router(report_router, prefix=settings.API_V1_PREFIX)
 app.include_router(upload_router, prefix=settings.API_V1_PREFIX)
+
+if report_router is not None:
+    app.include_router(report_router, prefix=settings.API_V1_PREFIX)
+
+if search_router is not None:
+    app.include_router(search_router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/")

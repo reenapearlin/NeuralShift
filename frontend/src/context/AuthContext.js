@@ -1,26 +1,14 @@
 import { createContext, createElement, useCallback, useContext, useMemo, useState } from "react";
 import { Navigate, Outlet } from "react-router-dom";
-
-const TOKEN_KEY = "lis_token";
-const USER_KEY = "lis_user";
-const USERS_KEY = "lis_users";
+import {
+  login as loginApi,
+  signup as signupApi,
+  logout as logoutApi,
+  TOKEN_KEY,
+  USER_KEY,
+} from "../api/authApi";
 
 const AuthContext = createContext(null);
-
-const normalizeEmail = (email) => (email || "").trim().toLowerCase();
-
-const getStoredUsers = () => {
-  try {
-    const raw = localStorage.getItem(USERS_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-};
-
-const setStoredUsers = (users) => {
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
-};
 
 const getInitialAuth = () => {
   try {
@@ -48,58 +36,25 @@ export const AuthProvider = ({ children }) => {
   };
 
   const login = useCallback(async (credentials, role) => {
-    const normalizedRole = role === "admin" ? "admin" : "lawyer";
-    const email = normalizeEmail(credentials?.email);
-    const storedUsers = getStoredUsers();
-    const matchedUser = email ? storedUsers[email] : null;
-
-    const data = {
-      token: `mock-token-${normalizedRole}-${Date.now()}`,
-      user: {
-        id: matchedUser?.id || `${normalizedRole}-${Date.now()}`,
-        role: normalizedRole,
-        email: email || "",
-        fullName: matchedUser?.fullName || (normalizedRole === "admin" ? "Admin User" : "Lawyer User"),
-      },
-    };
-
+    const data = await loginApi({ ...credentials, role });
+    if (!data?.token || !data?.user) {
+      throw new Error("Login response was incomplete.");
+    }
     persist({ token: data.token, user: data.user });
     return data;
   }, []);
 
   const signup = useCallback(async (payload) => {
-    const email = normalizeEmail(payload?.email);
-    const fullName = (payload?.fullName || "").trim() || "Lawyer User";
-    const userId = `lawyer-${Date.now()}`;
-
-    if (email) {
-      const storedUsers = getStoredUsers();
-      storedUsers[email] = {
-        id: storedUsers[email]?.id || userId,
-        role: "lawyer",
-        email,
-        fullName,
-      };
-      setStoredUsers(storedUsers);
+    const data = await signupApi(payload);
+    if (!data?.token || !data?.user) {
+      throw new Error("Signup response was incomplete.");
     }
-
-    const data = {
-      token: `mock-token-lawyer-${Date.now()}`,
-      user: {
-        id: userId,
-        role: "lawyer",
-        email,
-        fullName,
-      },
-    };
-
     persist({ token: data.token, user: data.user });
     return data;
   }, []);
 
   const logout = useCallback(async () => {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
+    await logoutApi();
     setAuthState({ token: null, user: null, role: null });
   }, []);
 

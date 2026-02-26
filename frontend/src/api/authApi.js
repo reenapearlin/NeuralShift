@@ -1,10 +1,10 @@
 import axios from "axios";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
 export const TOKEN_KEY = "lis_token";
 export const USER_KEY = "lis_user";
 const rawMockFlag = import.meta.env.VITE_USE_MOCK_API;
-const USE_MOCK_API = rawMockFlag === undefined ? true : rawMockFlag !== "false";
+const USE_MOCK_API = rawMockFlag === "true";
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -46,12 +46,27 @@ const buildMockUser = (role, email, fullName = "Demo User") => ({
   experience: "8",
 });
 
-export const shouldFallbackToMock = (error) => {
-  // No HTTP response usually means backend is unreachable (network/CORS/server down).
-  return !error?.response;
+const decodeJwtPayload = (token) => {
+  try {
+    const payloadPart = token?.split(".")?.[1];
+    if (!payloadPart) {
+      return {};
+    }
+    const base64 = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
+    const json = typeof atob === "function"
+      ? atob(base64)
+      : Buffer.from(base64, "base64").toString("utf-8");
+    return JSON.parse(json);
+  } catch {
+    return {};
+  }
 };
 
+const normalizeRole = (role) => (role === "admin" ? "admin" : "lawyer");
+
 export const login = async ({ email, password, role }) => {
+  const requestedRole = normalizeRole(role);
+
   if (USE_MOCK_API) {
     await sleep(650);
 
@@ -59,32 +74,37 @@ export const login = async ({ email, password, role }) => {
       throw new Error("Email and password are required.");
     }
 
-    const mockToken = `mock-jwt-token-${role || "lawyer"}-${Date.now()}`;
+    const mockToken = `mock-jwt-token-${requestedRole}-${Date.now()}`;
     return {
       token: mockToken,
-      user: buildMockUser(role || "lawyer", email, role === "admin" ? "Admin Console" : "Arjun Mehra"),
+      user: buildMockUser(
+        requestedRole,
+        email,
+        requestedRole === "admin" ? "Admin Console" : "Arjun Mehra"
+      ),
       expiresIn: 3600,
     };
   }
 
-  try {
-    const { data } = await apiClient.post("/auth/login", { email, password, role });
-    return data;
-  } catch (error) {
-    if (shouldFallbackToMock(error)) {
-      const fallbackRole = role || "lawyer";
-      return {
-        token: `mock-jwt-token-${fallbackRole}-${Date.now()}`,
-        user: buildMockUser(
-          fallbackRole,
-          email,
-          fallbackRole === "admin" ? "Admin Console" : "Arjun Mehra"
-        ),
-        expiresIn: 3600,
-      };
-    }
-    throw error;
+  const { data } = await apiClient.post("/auth/login", { email, password });
+  const token = data?.access_token;
+  if (!token) {
+    throw new Error("Backend login did not return a token.");
   }
+
+  const payload = decodeJwtPayload(token);
+  const resolvedRole = payload?.role || requestedRole;
+
+  return {
+    token,
+    user: {
+      id: payload?.sub || email,
+      role: resolvedRole,
+      email,
+      fullName: email,
+    },
+    expiresIn: 3600,
+  };
 };
 
 export const signup = async (payload) => {
@@ -102,19 +122,20 @@ export const signup = async (payload) => {
     };
   }
 
-  try {
-    const { data } = await apiClient.post("/auth/signup", payload);
-    return data;
-  } catch (error) {
-    if (shouldFallbackToMock(error)) {
-      return {
-        token: `mock-jwt-token-lawyer-${Date.now()}`,
-        user: buildMockUser("lawyer", payload?.email, payload?.fullName || "Demo User"),
-        message: "Lawyer account created successfully.",
-      };
-    }
-    throw error;
-  }
+  const requestPayload = {
+    full_name: payload?.fullName,
+    email: payload?.email,
+    password: payload?.password,
+  };
+
+  await apiClient.post("/auth/signup", requestPayload);
+
+  // Auto-login after signup for smoother UX.
+  return login({
+    email: payload?.email,
+    password: payload?.password,
+    role: "lawyer",
+  });
 };
 
 export const logout = async () => {
@@ -122,7 +143,7 @@ export const logout = async () => {
     try {
       await apiClient.post("/auth/logout");
     } catch {
-      // Intentionally ignore backend logout failure and clear client state.
+      // Ignore backend logout failure and clear client state.
     }
   }
 

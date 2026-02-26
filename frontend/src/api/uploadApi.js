@@ -1,4 +1,4 @@
-﻿import { apiClient, isMockApiEnabled } from "./authApi";
+import { apiClient, isMockApiEnabled } from "./authApi";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -33,7 +33,7 @@ export const uploadCaseFile = async (file, onProgress, metadata = {}) => {
     }
   });
 
-  const { data } = await apiClient.post("/upload/casefile", formData, {
+  const { data } = await apiClient.post("/upload/", formData, {
     headers: { "Content-Type": "multipart/form-data" },
     onUploadProgress: (event) => {
       if (!onProgress || !event.total) {

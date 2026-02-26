@@ -73,6 +73,7 @@ get_db = _resolve_dependency("get_db")
 get_retriever = _resolve_dependency("get_retriever")
 get_summary_chain = _resolve_dependency("get_summary_chain")
 get_structured_report_chain = _resolve_dependency("get_structured_report_chain")
+get_current_user = _resolve_dependency("get_current_user")
 
 
 @router.post("", response_model=SearchResultsResponse)
@@ -81,14 +82,16 @@ def search_cases_route(
     limit: int = Query(default=10, ge=1, le=50),
     db: Any = Depends(get_db),
     retriever: Any = Depends(get_retriever),
+    current_user: Any = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Run retrieval-only search: metadata filter first, then vector retriever."""
     try:
+        effective_user_id = payload.user_id if payload.user_id is not None else getattr(current_user, "id", None)
         return search_cases(
             db=db,
             retriever=retriever,
             search_input=payload.model_dump(exclude_none=True),
-            user_id=payload.user_id,
+            user_id=effective_user_id,
             limit=limit,
         )
     except HTTPException:

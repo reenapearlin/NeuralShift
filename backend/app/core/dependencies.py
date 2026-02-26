@@ -42,3 +42,16 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
             detail="Admin access required",
         )
     return current_user
+
+
+# Optional RAG dependencies used by merged search/report routes.
+def get_retriever():
+    return None
+
+
+def get_summary_chain():
+    return None
+
+
+def get_structured_report_chain():
+    return None

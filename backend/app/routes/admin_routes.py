@@ -1,11 +1,14 @@
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.config.database import get_db
+from app.config.settings import get_settings
 from app.core.dependencies import require_admin
 from app.models.casefile import CaseFile
+from app.models.enums import CaseStatus
 from app.models.user import User
-from app.rag.rag_chain import index_document
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -25,22 +28,36 @@ def approve_case(
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
 
-    if str(case.status) == "APPROVED":
+    if case.status == CaseStatus.APPROVED:
         return {"message": "Case already approved"}
 
-    case.status = "APPROVED"
+    case.status = CaseStatus.APPROVED
     db.commit()
 
-    index_document(
-        file_path=case.file_path,
-        metadata={"case_id": case.id, "filename": getattr(case, "filename", None)},
-    )
+    indexed = False
+    indexing_error = None
+    try:
+        from app.rag.rag_chain import index_document
 
-    return {
+        settings = get_settings()
+        file_path = case.file_path
+        if not Path(file_path).is_absolute():
+            file_path = str(Path(settings.CASEFILES_ROOT_DIR).parent / file_path)
+
+        index_document(file_path=file_path, metadata={"case_id": case.id})
+        indexed = True
+    except Exception as exc:  # Keep approval successful even if indexing deps are unavailable.
+        indexing_error = str(exc)
+
+    response = {
         "message": "Case approved successfully",
         "case_id": case.id,
-        "status": str(case.status),
+        "status": case.status.value,
+        "indexed": indexed,
     }
+    if indexing_error:
+        response["indexing_error"] = indexing_error
+    return response
 
 
 @router.put("/reject/{case_id}")
@@ -53,11 +70,11 @@ def reject_case(
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
 
-    case.status = "REJECTED"
+    case.status = CaseStatus.REJECTED
     db.commit()
 
     return {
         "message": "Case rejected successfully",
         "case_id": case.id,
-        "status": str(case.status),
+        "status": case.status.value,
     }
