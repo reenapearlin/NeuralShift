@@ -1,10 +1,29 @@
 from fastapi import FastAPI
-from app.routes import upload_routes
-from app.routes import admin_routes
-from app.routes import report_routes
 
-app = FastAPI(title="Legal AI Backend")
+from app.config.database import Base, engine
+from app.config.settings import get_settings
+from app.models import casefile, logs, metadata, report, user  # noqa: F401
+from app.routes.admin_routes import router as admin_router
+from app.routes.auth_routes import router as auth_router
+from app.routes.report_routes import router as report_router
+from app.routes.upload_routes import router as upload_router
 
-app.include_router(upload_routes.router)
-app.include_router(admin_routes.router)
-app.include_router(report_routes.router)
+
+settings = get_settings()
+app = FastAPI(title=settings.PROJECT_NAME)
+
+
+@app.on_event("startup")
+def on_startup() -> None:
+    Base.metadata.create_all(bind=engine)
+
+
+app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
+app.include_router(admin_router, prefix=settings.API_V1_PREFIX)
+app.include_router(report_router, prefix=settings.API_V1_PREFIX)
+app.include_router(upload_router, prefix=settings.API_V1_PREFIX)
+
+
+@app.get("/")
+def health_check() -> dict[str, str]:
+    return {"status": "ok", "service": settings.PROJECT_NAME}

@@ -2,49 +2,54 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.config.database import get_db
+from app.core.dependencies import require_admin
 from app.models.casefile import CaseFile
-
-# This function should exist from Member 3
-from app.rag.rag_chain import ingest_document
+from app.models.user import User
+from app.rag.rag_chain import index_document
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
-# ✅ APPROVE CASE
+@router.get("/protected")
+def admin_protected_route(current_user: User = Depends(require_admin)) -> dict[str, str]:
+    return {"message": f"Welcome admin {current_user.full_name}"}
+
+
 @router.put("/approve/{case_id}")
-def approve_case(case_id: int, db: Session = Depends(get_db)):
-
+def approve_case(
+    case_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
     case = db.query(CaseFile).filter(CaseFile.id == case_id).first()
-
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
 
-    if case.status == "APPROVED":
+    if str(case.status) == "APPROVED":
         return {"message": "Case already approved"}
 
-    # Change status
     case.status = "APPROVED"
     db.commit()
 
-    # 🔥 Trigger RAG ingestion (ONLY after approval)
-    ingest_document(
-        text=case.extracted_text,
-        metadata={"case_id": case.id, "filename": case.filename}
+    index_document(
+        file_path=case.file_path,
+        metadata={"case_id": case.id, "filename": getattr(case, "filename", None)},
     )
 
     return {
         "message": "Case approved successfully",
         "case_id": case.id,
-        "status": case.status
+        "status": str(case.status),
     }
 
 
-# ❌ REJECT CASE
 @router.put("/reject/{case_id}")
-def reject_case(case_id: int, db: Session = Depends(get_db)):
-
+def reject_case(
+    case_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
     case = db.query(CaseFile).filter(CaseFile.id == case_id).first()
-
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
 
@@ -54,5 +59,5 @@ def reject_case(case_id: int, db: Session = Depends(get_db)):
     return {
         "message": "Case rejected successfully",
         "case_id": case.id,
-        "status": case.status
+        "status": str(case.status),
     }

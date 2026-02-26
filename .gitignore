@@ -12,4 +12,7 @@ build/
 # FAISS index
 backend/faiss_index/
 
+# Local storage for uploaded files
+backend/storage/
+
 .DS_Store
