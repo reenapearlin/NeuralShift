@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -11,21 +14,21 @@ class CaseFile(Base):
     __tablename__ = "casefiles"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    case_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    case_title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    filename: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     file_path: Mapped[str] = mapped_column(String(500), nullable=False)
-    extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extracted_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[CaseStatus] = mapped_column(
         Enum(CaseStatus, name="case_status_enum"),
         default=CaseStatus.PENDING,
         nullable=False,
     )
-    uploaded_by: Mapped[int | None] = mapped_column(
+    uploaded_by: Mapped[Optional[int]] = mapped_column(
         ForeignKey("users.id"),
         nullable=True,
     )
-    reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=datetime.utcnow,

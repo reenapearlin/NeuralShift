@@ -24,17 +24,17 @@ case_status_enum = sa.Enum("PENDING", "APPROVED", "REJECTED", name="case_status_
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    user_role_enum.create(bind, checkfirst=True)
-    case_status_enum.create(bind, checkfirst=True)
-
     op.create_table(
         "users",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("full_name", sa.String(length=255), nullable=False),
         sa.Column("email", sa.String(length=255), nullable=False),
         sa.Column("hashed_password", sa.String(length=255), nullable=False),
-        sa.Column("role", user_role_enum, nullable=False),
+        sa.Column(
+            "role",
+            sa.Enum("ADMIN", "LAWYER", name="user_role_enum", create_type=False),
+            nullable=False,
+        ),
         sa.Column("is_active", sa.Boolean(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("id"),
@@ -47,7 +47,17 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("case_title", sa.String(length=255), nullable=False),
         sa.Column("file_path", sa.String(length=500), nullable=False),
-        sa.Column("status", case_status_enum, nullable=False),
+        sa.Column(
+            "status",
+            sa.Enum(
+                "PENDING",
+                "APPROVED",
+                "REJECTED",
+                name="case_status_enum",
+                create_type=False,
+            ),
+            nullable=False,
+        ),
         sa.Column("uploaded_by", sa.Integer(), nullable=False),
         sa.Column("reviewed_by", sa.Integer(), nullable=True),
         sa.Column("rejection_reason", sa.Text(), nullable=True),
