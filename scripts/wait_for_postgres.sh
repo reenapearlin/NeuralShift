@@ -10,7 +10,7 @@ db="$(grep -E '^POSTGRES_DB=' "$ROOT_DIR/.env" | head -n1 | cut -d'=' -f2-)"
 password="$(grep -E '^POSTGRES_PASSWORD=' "$ROOT_DIR/.env" | head -n1 | cut -d'=' -f2-)"
 
 host="${host:-localhost}"
-port="${port:-5432}"
+port="${port:-5434}"
 user="${user:-postgres}"
 db="${db:-neuralshift}"
 password="${password:-postgres}"

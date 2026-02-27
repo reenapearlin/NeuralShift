@@ -1,6 +1,11 @@
 ﻿import { FileText } from "lucide-react";
 
 const CaseFileViewer = ({ fileUrl, keyPoints = [] }) => {
+  const keywordForSearch = keyPoints.length > 0 ? encodeURIComponent(keyPoints[0]) : "";
+  const viewerUrl = fileUrl && keywordForSearch
+    ? `${fileUrl}${fileUrl.includes("#") ? "&" : "#"}search=${keywordForSearch}`
+    : fileUrl;
+
   return (
     <section className="space-y-4 rounded-lg border border-slate-700/50 bg-gradient-to-br from-slate-800/50 to-slate-900/50 p-6">
       <h3 className="text-lg font-bold text-white">Case File & Documents</h3>
@@ -9,7 +14,7 @@ const CaseFileViewer = ({ fileUrl, keyPoints = [] }) => {
         <div className="overflow-hidden rounded-lg border border-slate-700/50">
           <iframe
             title="Case PDF Viewer"
-            src={fileUrl}
+            src={viewerUrl}
             className="h-96 w-full bg-white sm:h-[500px] lg:h-[600px]"
           />
         </div>

@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
@@ -15,28 +15,53 @@ import {
   Send,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
+import { approveCase, fetchAdminStats, fetchPendingCases, rejectCase } from "../../api/adminApi";
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const { logout, user } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [statsData, setStatsData] = useState({
+    total_lawyers: 0,
+    pending_cases: 0,
+    approved_cases: 0,
+    total_cases: 0,
+  });
+  const [pendingUploads, setPendingUploads] = useState([]);
+  const [loadingCases, setLoadingCases] = useState(false);
+
+  const loadDashboardData = async () => {
+    setLoadingCases(true);
+    try {
+      const [stats, pending] = await Promise.all([fetchAdminStats(), fetchPendingCases()]);
+      setStatsData({
+        total_lawyers: stats?.total_lawyers || 0,
+        pending_cases: stats?.pending_cases || 0,
+        approved_cases: stats?.approved_cases || 0,
+        total_cases: stats?.total_cases || 0,
+      });
+      setPendingUploads(pending);
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setLoadingCases(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
 
   const stats = useMemo(
     () => [
-      { label: "Total Lawyers", value: 1248, icon: Users, color: "from-blue-400 to-blue-600" },
-      { label: "Pending Cases", value: 86, icon: FileClock, color: "from-yellow-400 to-yellow-600" },
-      { label: "Published Cases", value: 3912, icon: FileCheck, color: "from-green-400 to-green-600" },
-      { label: "Total Records", value: 12560, icon: Database, color: "from-purple-400 to-purple-600" },
+      { label: "Total Lawyers", value: statsData.total_lawyers, icon: Users, color: "from-blue-400 to-blue-600" },
+      { label: "Pending Cases", value: statsData.pending_cases, icon: FileClock, color: "from-yellow-400 to-yellow-600" },
+      { label: "Published Cases", value: statsData.approved_cases, icon: FileCheck, color: "from-green-400 to-green-600" },
+      { label: "Total Records", value: statsData.total_cases, icon: Database, color: "from-purple-400 to-purple-600" },
     ],
-    []
+    [statsData]
   );
-
-  const pendingUploads = [
-    { id: "UP-4821", lawyer: "A. Singh", court: "Delhi High Court", status: "Pending", date: "2024-02-23" },
-    { id: "UP-4822", lawyer: "R. Nair", court: "Bombay High Court", status: "Pending", date: "2024-02-22" },
-    { id: "UP-4823", lawyer: "P. Kumar", court: "Chennai High Court", status: "Under Review", date: "2024-02-21" },
-  ];
 
   const navItems = [
     { key: "dashboard", label: "Dashboard", icon: Shield },
@@ -52,17 +77,27 @@ const AdminDashboard = () => {
     navigate("/");
   };
 
-  const handleApprove = (id) => {
-    toast.success(`Approved ${id}`);
+  const handleApprove = async (id) => {
+    try {
+      await approveCase(id);
+      toast.success(`Approved case #${id}`);
+      await loadDashboardData();
+    } catch (error) {
+      toast.error(error.message);
+    }
   };
 
-  const handleReject = (id) => {
-    toast.error(`Rejected ${id}`);
+  const handleReject = async (id) => {
+    try {
+      await rejectCase(id);
+      toast.success(`Rejected case #${id}`);
+      await loadDashboardData();
+    } catch (error) {
+      toast.error(error.message);
+    }
   };
 
-  const handlePublish = (id) => {
-    toast.success(`Published ${id}`);
-  };
+  const handlePublish = async (id) => handleApprove(id);
 
   return (
     <div className="relative min-h-screen bg-slate-950 text-slate-100">
@@ -190,7 +225,7 @@ const AdminDashboard = () => {
                   </div>
                   <div className="rounded-lg bg-slate-700/20 px-4 py-3">
                     <p className="text-sm text-slate-400">Storage Usage</p>
-                    <p className="mt-1 font-semibold text-yellow-400">72%</p>
+                    <p className="mt-1 font-semibold text-yellow-400">{statsData.pending_cases}</p>
                   </div>
                 </div>
               </article>
@@ -209,8 +244,8 @@ const AdminDashboard = () => {
                     <thead>
                       <tr className="border-b border-slate-700/50 bg-slate-800/30">
                         <th className="px-4 py-3 text-left font-semibold text-slate-300">Upload ID</th>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-300">Lawyer</th>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-300">Court</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-300">Case Title</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-300">File Path</th>
                         <th className="px-4 py-3 text-left font-semibold text-slate-300">Status</th>
                         <th className="px-4 py-3 text-left font-semibold text-slate-300">Date</th>
                         <th className="px-4 py-3 text-left font-semibold text-slate-300">Actions</th>
@@ -224,24 +259,26 @@ const AdminDashboard = () => {
                         >
                           <td className="px-4 py-3">
                             <code className="rounded bg-slate-800 px-2 py-1 text-xs font-mono text-amber-400">
-                              {item.id}
+                              #{item.id}
                             </code>
                           </td>
-                          <td className="px-4 py-3 text-white">{item.lawyer}</td>
-                          <td className="px-4 py-3 text-slate-300">{item.court}</td>
+                          <td className="px-4 py-3 text-white">{item.case_title || "Untitled Case"}</td>
+                          <td className="px-4 py-3 text-slate-300">{item.file_path}</td>
                           <td className="px-4 py-3">
                             <span
                               className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                                item.status === "Pending"
+                                item.status === "pending"
                                   ? "bg-yellow-400/10 text-yellow-400"
                                   : "bg-blue-400/10 text-blue-400"
                               }`}
                             >
                               <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                              {item.status}
+                              {String(item.status || "").toUpperCase()}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-slate-400">{item.date}</td>
+                          <td className="px-4 py-3 text-slate-400">
+                            {item.created_at ? new Date(item.created_at).toLocaleDateString() : "N/A"}
+                          </td>
                           <td className="px-4 py-3">
                             <div className="flex gap-1.5">
                               <button
@@ -274,6 +311,12 @@ const AdminDashboard = () => {
                       ))}
                     </tbody>
                   </table>
+                  {loadingCases && (
+                    <p className="mt-4 text-sm text-slate-400">Loading pending cases...</p>
+                  )}
+                  {!loadingCases && pendingUploads.length === 0 && (
+                    <p className="mt-4 text-sm text-slate-400">No pending case uploads found.</p>
+                  )}
                 </div>
               </article>
             </section>

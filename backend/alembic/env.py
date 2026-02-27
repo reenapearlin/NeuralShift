@@ -13,7 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.config.database import Base  # noqa: E402
 from app.config.settings import get_settings  # noqa: E402
-from app.models import casefile, logs, metadata, report, user  # noqa: F401, E402
+from app.models import casefile, logs, metadata, report, scraped_case, user  # noqa: F401, E402
 
 config = context.config
 settings = get_settings()

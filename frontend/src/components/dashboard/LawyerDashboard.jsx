@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
@@ -20,6 +20,7 @@ import { useAuth } from "../../context/AuthContext";
 import SearchForm from "../search/SearchForm";
 import Filters from "../search/Filters";
 import FileUpload from "../search/FileUpload";
+import PrecedentChat from "../search/PrecedentChat";
 
 const navItems = [
   { key: "dashboard", label: "Overview", icon: LayoutDashboard },
@@ -27,6 +28,16 @@ const navItems = [
   { key: "upload", label: "Upload Case", icon: FolderUp },
   { key: "saved", label: "Saved Cases", icon: Bookmark },
 ];
+
+const getBookmarksFromStorage = () => {
+  try {
+    const raw = localStorage.getItem("lis_bookmarks");
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
 
 const LawyerDashboard = () => {
   const navigate = useNavigate();
@@ -40,19 +51,36 @@ const LawyerDashboard = () => {
     noticeCompliance: "",
     limitationPeriod: "",
     courtLevel: "",
+    freeText: "",
   });
   const [filters, setFilters] = useState({ fineAmount: "", jurisdiction: "", ranking: "" });
   const [loadingSearch, setLoadingSearch] = useState(false);
   const [results, setResults] = useState([]);
+  const [savedItems, setSavedItems] = useState([]);
+
+  useEffect(() => {
+    const refreshBookmarks = () => {
+      setSavedItems(getBookmarksFromStorage());
+    };
+
+    refreshBookmarks();
+    window.addEventListener("storage", refreshBookmarks);
+    window.addEventListener("lis-bookmarks-updated", refreshBookmarks);
+
+    return () => {
+      window.removeEventListener("storage", refreshBookmarks);
+      window.removeEventListener("lis-bookmarks-updated", refreshBookmarks);
+    };
+  }, []);
 
   const metrics = useMemo(
     () => [
       { label: "Matched Cases", value: results.length, hint: "From latest search", icon: Scale },
       { label: "Court", value: user?.courtOfPractice || "Not set", hint: "Primary practice", icon: BriefcaseBusiness },
       { label: "Experience", value: `${user?.experience || 0} years`, hint: "Professional profile", icon: Clock3 },
-      { label: "Saved", value: "12", hint: "Bookmarked references", icon: Bookmark },
+      { label: "Saved", value: savedItems.length, hint: "Bookmarked references", icon: Bookmark },
     ],
-    [results.length, user?.courtOfPractice, user?.experience]
+    [results.length, savedItems.length, user?.courtOfPractice, user?.experience]
   );
 
   const handleQueryChange = (event) => {
@@ -272,6 +300,7 @@ const LawyerDashboard = () => {
             <section className="space-y-6">
               <SearchForm form={query} onChange={handleQueryChange} onSubmit={handleSearch} loading={loadingSearch} />
               <Filters filters={filters} onChange={handleFilterChange} />
+              <PrecedentChat />
 
               {/* Results */}
               <article className="rounded-lg border border-slate-700/50 bg-gradient-to-br from-slate-800/50 to-slate-900/50 p-6">
@@ -293,6 +322,9 @@ const LawyerDashboard = () => {
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex-1 min-w-0">
                             <h4 className="font-semibold text-white">{item.title}</h4>
+                            <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-amber-300">
+                              {item.source === "web" ? "Web Precedent (Live Scrape)" : "Local Approved Case"}
+                            </p>
                             <p className="mt-2 text-sm text-slate-300">{item.summary}</p>
                           </div>
                           <button
@@ -324,7 +356,46 @@ const LawyerDashboard = () => {
           {active === "saved" && (
             <section className="rounded-lg border border-slate-700/50 bg-gradient-to-br from-slate-800/50 to-slate-900/50 p-6">
               <h3 className="mb-1 text-lg font-bold text-white">Saved Cases</h3>
-              <p className="mt-2 text-slate-400">Coming soon - bookmark your important cases for quick reference</p>
+              {(() => {
+                const items = savedItems;
+                if (!items.length) {
+                  return <p className="mt-2 text-slate-400">No bookmarks yet.</p>;
+                }
+                return (
+                  <div className="mt-4 space-y-3">
+                    {items.map((item) => (
+                      <article
+                        key={item.id}
+                        className="rounded-lg border border-slate-600/50 bg-slate-700/20 p-4"
+                      >
+                        <p className="font-semibold text-white">{item.title}</p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          Saved: {item.savedAt ? new Date(item.savedAt).toLocaleString() : "N/A"}
+                        </p>
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/results/${item.id}`)}
+                            className="rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-slate-900"
+                          >
+                            View
+                          </button>
+                          {item.sourceUrl && (
+                            <a
+                              href={item.sourceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-lg border border-slate-500 px-3 py-1.5 text-xs font-semibold text-slate-200"
+                            >
+                              Source
+                            </a>
+                          )}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                );
+              })()}
             </section>
           )}
         </main>

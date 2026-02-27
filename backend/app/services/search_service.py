@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 import json
+from pathlib import Path
+import re
 from typing import Any, Dict, List, Mapping, Optional
 
 from sqlalchemy import text
 
+from app.config.settings import get_settings
+from app.rag.rag_chain import extract_legal_keywords
 from app.utils.file_parser import append_file_context_to_query
+from app.utils.file_parser import extract_text_from_pdf
 from app.utils.logger import log_search_event
 from app.utils.metadata_filter import fetch_metadata_filtered_cases, get_case_table_config, quote_ident
 
@@ -128,6 +134,93 @@ def _parse_chain_output(value: Any) -> Any:
     return str(value)
 
 
+def _invoke_with_timeout(func: Any, timeout_seconds: int = 20) -> Any:
+    """Run a callable with timeout and return None on timeout/failure."""
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(func)
+            return future.result(timeout=timeout_seconds)
+    except (FutureTimeoutError, Exception):
+        return None
+
+
+def _fallback_summary_from_text(text_value: str) -> str:
+    text = " ".join((text_value or "").split())
+    if not text:
+        return (
+            "Facts: Not Specified\n"
+            "Legal Issue: Not Specified\n"
+            "Court Reasoning: Not Specified\n"
+            "Final Judgment: Not Specified"
+        )
+    head = text[:1200]
+    return (
+        f"Facts: {head[:320]}\n"
+        f"Legal Issue: {head[320:600] or 'Not Specified'}\n"
+        f"Court Reasoning: {head[600:900] or 'Not Specified'}\n"
+        f"Final Judgment: {head[900:1200] or 'Not Specified'}"
+    )
+
+
+def _fallback_structured_report(text_value: str, case_title: str) -> Dict[str, Any]:
+    text = " ".join((text_value or "").split())
+    sections = sorted(set(re.findall(r"section\s+\d+[a-z]?", text, flags=re.IGNORECASE)))
+    if not sections:
+        sections = ["Not Specified"]
+
+    principles = sorted(
+        set(
+            match.title()
+            for match in re.findall(
+                r"(legally enforceable debt|dishonou?r of cheque|statutory notice|presumption|burden of proof|limitation(?: period)?)",
+                text,
+                flags=re.IGNORECASE,
+            )
+        )
+    )
+    if not principles:
+        principles = ["Not Specified"]
+
+    return {
+        "case_title": case_title or "Not Specified",
+        "court": "Not Specified",
+        "legal_issue": "Not Specified",
+        "relevant_sections": sections,
+        "limitation_analysis": "Not Specified",
+        "penalty": "Not Specified",
+        "judgement": "Not Specified",
+        "key_principles": principles,
+    }
+
+
+def _fallback_keywords(text_value: str, limit: int = 12) -> List[str]:
+    text = (text_value or "").lower()
+    patterns = [
+        r"section\s+\d+[a-z]?",
+        r"negotiable instruments act",
+        r"dishonou?r(?:ed|)",
+        r"cheque(?:\s+bounce)?",
+        r"statutory notice",
+        r"legally enforceable debt",
+        r"presumption",
+        r"limitation(?: period)?",
+        r"burden of proof",
+    ]
+    seen: set[str] = set()
+    items: List[str] = []
+    for pattern in patterns:
+        for hit in re.findall(pattern, text, flags=re.IGNORECASE):
+            term = re.sub(r"\s+", " ", hit).strip()
+            key = term.lower()
+            if not term or key in seen:
+                continue
+            seen.add(key)
+            items.append(term.title())
+            if len(items) >= limit:
+                return items
+    return items
+
+
 def search_cases(
     db: Any,
     retriever: Any,
@@ -241,29 +334,64 @@ def get_case_view(
     if not row:
         raise ValueError(f"Case not found for case_id={case_id}")
 
+    pdf_path = row.get("pdf_path")
+    case_title = row.get("case_title") or ""
+    if not case_title and pdf_path:
+        case_title = Path(str(pdf_path)).stem.replace("_", " ").strip()
+    if not case_title:
+        case_title = "Not Specified"
+
     case_text = row.get("full_text") or row.get("short_snippet") or ""
+    if not case_text and pdf_path:
+        resolved_pdf_path = str(pdf_path)
+        if not Path(resolved_pdf_path).is_absolute():
+            settings = get_settings()
+            resolved_pdf_path = str(Path(settings.CASEFILES_ROOT_DIR).parent / resolved_pdf_path)
+        case_text = extract_text_from_pdf(resolved_pdf_path)
+
     payload = {
         "case_id": row.get("case_id"),
-        "case_title": row.get("case_title"),
-        "case_text": case_text,
+        "case_title": case_title,
+        "case_text": case_text[:8000] if case_text else "",
     }
 
-    summary_raw = _call_chain(summary_chain, payload)
-    report_raw = _call_chain(structured_report_chain, payload)
+    summary_raw = _invoke_with_timeout(lambda: _call_chain(summary_chain, payload), timeout_seconds=25)
+    report_raw = _invoke_with_timeout(
+        lambda: _call_chain(structured_report_chain, payload),
+        timeout_seconds=30,
+    )
 
     summary = _parse_chain_output(summary_raw)
     report = _parse_chain_output(report_raw)
 
     if isinstance(summary, dict):
         summary = json.dumps(summary)
-    if summary is None:
-        summary = ""
+    if summary is None or not str(summary).strip():
+        summary = _fallback_summary_from_text(case_text)
 
     if not isinstance(report, dict):
-        report = {"report": report}
+        report = _fallback_structured_report(case_text, case_title)
+
+    key_points: List[str] = []
+    report_key_principles = report.get("key_principles") if isinstance(report, dict) else None
+    if isinstance(report_key_principles, list):
+        key_points = [str(item).strip() for item in report_key_principles if str(item).strip()]
+    if not key_points and case_text.strip():
+        keyword_result = _invoke_with_timeout(
+            lambda: extract_legal_keywords(case_text[:8000]),
+            timeout_seconds=20,
+        )
+        if isinstance(keyword_result, list):
+            key_points = [str(item).strip() for item in keyword_result if str(item).strip()][:12]
+    if not key_points:
+        key_points = _fallback_keywords(case_text)
+    if not key_points:
+        key_points = ["Not Specified"]
 
     return {
+        "case_title": case_title,
         "summary": summary,
         "structured_report": report,
-        "pdf_path": row.get("pdf_path"),
+        "pdf_path": pdf_path,
+        "key_points": key_points,
     }

@@ -74,7 +74,10 @@ def get_case_table_config(db: Any) -> Dict[str, Any]:
     year_col = find_first_column(case_columns, ["year", "judgment_year", "decision_year"])
     bench_col = find_first_column(case_columns, ["bench"])
     snippet_col = find_first_column(case_columns, ["short_snippet", "snippet", "headnote", "summary"])
-    text_col = find_first_column(case_columns, ["full_text", "judgment_text", "text", "content", "body"])
+    text_col = find_first_column(
+        case_columns,
+        ["extracted_text", "full_text", "judgment_text", "text", "content", "body"],
+    )
     pdf_col = find_first_column(case_columns, ["pdf_path", "file_path", "document_path", "path"])
 
     metadata_table = find_table(

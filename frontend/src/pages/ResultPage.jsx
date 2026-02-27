@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import { ArrowLeft, Copy, Download, Share2 } from "lucide-react";
+import { ArrowLeft, Bookmark, Copy, Download, ExternalLink, Share2 } from "lucide-react";
 import CaseSummary from "../components/results/CaseSummary";
 import StructuredReport from "../components/results/StructuredReport";
 import CaseFileViewer from "../components/results/CaseFileViewer";
@@ -21,6 +21,7 @@ const ResultPage = () => {
   const [caseData, setCaseData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("summary");
+  const [bookmarked, setBookmarked] = useState(false);
 
   useEffect(() => {
     const fetchCase = async () => {
@@ -37,6 +38,61 @@ const ResultPage = () => {
 
     fetchCase();
   }, [id]);
+
+  useEffect(() => {
+    if (!caseData) {
+      setBookmarked(false);
+      return;
+    }
+    const raw = localStorage.getItem("lis_bookmarks");
+    const items = raw ? JSON.parse(raw) : [];
+    setBookmarked(items.some((item) => item.id === caseData.id));
+  }, [caseData]);
+
+  const handleBookmark = () => {
+    if (!caseData) {
+      return;
+    }
+    const raw = localStorage.getItem("lis_bookmarks");
+    const items = raw ? JSON.parse(raw) : [];
+    const exists = items.some((item) => item.id === caseData.id);
+    let next;
+    if (exists) {
+      next = items.filter((item) => item.id !== caseData.id);
+      toast.success("Removed from bookmarks");
+    } else {
+      next = [
+        ...items,
+        {
+          id: caseData.id,
+          title: caseData.title,
+          sourceUrl: caseData.sourceUrl || null,
+          savedAt: new Date().toISOString(),
+        },
+      ];
+      toast.success("Saved to bookmarks");
+    }
+    localStorage.setItem("lis_bookmarks", JSON.stringify(next));
+    window.dispatchEvent(new Event("lis-bookmarks-updated"));
+    setBookmarked(!exists);
+  };
+
+  const handleDownload = () => {
+    if (!caseData) {
+      return;
+    }
+    const blob = new Blob([JSON.stringify(caseData, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `case_${caseData.id}_analysis.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
 
   const tabContent = useMemo(() => {
     if (!caseData) {
@@ -115,12 +171,33 @@ const ResultPage = () => {
               Share
             </button>
             <button
+              onClick={handleDownload}
               className="flex items-center gap-2 rounded-lg border border-slate-600 bg-slate-800/50 px-3 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-700/50 hover:border-slate-500"
               title="Download case details"
             >
               <Download className="h-4 w-4" />
               Export
             </button>
+            <button
+              onClick={handleBookmark}
+              className="flex items-center gap-2 rounded-lg border border-slate-600 bg-slate-800/50 px-3 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-700/50 hover:border-slate-500"
+              title="Bookmark this case"
+            >
+              <Bookmark className="h-4 w-4" />
+              {bookmarked ? "Bookmarked" : "Bookmark"}
+            </button>
+            {caseData?.sourceUrl && (
+              <a
+                href={caseData.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-2 rounded-lg border border-slate-600 bg-slate-800/50 px-3 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-700/50 hover:border-slate-500"
+                title="Open source document"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Source
+              </a>
+            )}
           </div>
         </div>
 

@@ -73,6 +73,18 @@ const SearchForm = ({ form, onChange, onSubmit, loading }) => {
           </div>
         </div>
 
+        <div>
+          <label className={labelClass}>AI Free-Text Query (Optional)</label>
+          <textarea
+            name="freeText"
+            value={form.freeText}
+            onChange={onChange}
+            className={fieldClass}
+            rows={3}
+            placeholder="e.g., cheque bounce case where notice period and limitation were disputed"
+          />
+        </div>
+
         {/* Search Button */}
         <div className="flex gap-3">
           <button

@@ -1,4 +1,14 @@
 ﻿const StructuredReport = ({ report }) => {
+  const hasValue = (value) => {
+    if (Array.isArray(value)) {
+      return value.length > 0;
+    }
+    if (typeof value === "string") {
+      return value.trim().length > 0;
+    }
+    return value !== null && value !== undefined;
+  };
+
   const SectionBlock = ({ title, items, type = "list" }) => (
     <div className="overflow-hidden rounded-lg border border-slate-700/50 bg-slate-800/30 p-5 backdrop-blur">
       <h4 className="mb-4 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-amber-300">
@@ -31,24 +41,21 @@
       </div>
 
       <div className="grid gap-4">
-        {report?.facts && report.facts.length > 0 && (
-          <SectionBlock title="Case Facts" items={report.facts} type="list" />
+        {hasValue(report?.case_title) && <SectionBlock title="Case Title" items={report.case_title} type="text" />}
+        {hasValue(report?.court) && <SectionBlock title="Court" items={report.court} type="text" />}
+        {hasValue(report?.legal_issue) && (
+          <SectionBlock title="Legal Issue" items={report.legal_issue} type="text" />
         )}
-
-        {report?.legalIssues && report.legalIssues.length > 0 && (
-          <SectionBlock title="Legal Issues" items={report.legalIssues} type="list" />
+        {hasValue(report?.relevant_sections) && (
+          <SectionBlock title="Relevant Sections" items={report.relevant_sections} type="list" />
         )}
-
-        {report?.judgment && (
-          <SectionBlock
-            title="Judgment"
-            items={report.judgment}
-            type="text"
-          />
+        {hasValue(report?.limitation_analysis) && (
+          <SectionBlock title="Limitation Analysis" items={report.limitation_analysis} type="text" />
         )}
-
-        {report?.citations && report.citations.length > 0 && (
-          <SectionBlock title="Legal Citations" items={report.citations} type="list" />
+        {hasValue(report?.penalty) && <SectionBlock title="Penalty" items={report.penalty} type="text" />}
+        {hasValue(report?.judgement) && <SectionBlock title="Judgement" items={report.judgement} type="text" />}
+        {hasValue(report?.key_principles) && (
+          <SectionBlock title="Key Principles" items={report.key_principles} type="list" />
         )}
       </div>
     </section>

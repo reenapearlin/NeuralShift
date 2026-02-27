@@ -5,6 +5,7 @@ import { ArrowLeft, FileText } from "lucide-react";
 import SearchForm from "../components/search/SearchForm";
 import Filters from "../components/search/Filters";
 import FileUpload from "../components/search/FileUpload";
+import PrecedentChat from "../components/search/PrecedentChat";
 import { searchCases } from "../api/searchApi";
 
 const SearchPage = () => {
@@ -16,6 +17,7 @@ const SearchPage = () => {
     noticeCompliance: "",
     limitationPeriod: "",
     courtLevel: "",
+    freeText: "",
   });
   const [filters, setFilters] = useState({ fineAmount: "", jurisdiction: "", ranking: "" });
   const [loading, setLoading] = useState(false);
@@ -77,6 +79,9 @@ const SearchPage = () => {
         {/* Upload Section */}
         <FileUpload />
 
+        {/* AI Chat Search */}
+        <PrecedentChat />
+
         {/* Results Section */}
         <section className="rounded-lg border border-slate-700/50 bg-gradient-to-br from-slate-800/50 to-slate-900/50 p-6">
           <div className="mb-6">
@@ -101,6 +106,9 @@ const SearchPage = () => {
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-white">{item.title}</h3>
+                      <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-amber-300">
+                        {item.source === "web" ? "Web Precedent (Live Scrape)" : "Local Approved Case"}
+                      </p>
                       <p className="mt-2 text-sm text-slate-300 line-clamp-2">{item.summary}</p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {item.tags && item.tags.map((tag) => (

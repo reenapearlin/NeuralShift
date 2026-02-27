@@ -1,14 +1,24 @@
 import axios from "axios";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
+const normalizeApiBaseUrl = (rawUrl) => {
+  const fallback = "http://localhost:8000/api/v1";
+  if (!rawUrl || typeof rawUrl !== "string") {
+    return fallback;
+  }
+  const trimmed = rawUrl.trim().replace(/\/+$/, "");
+  if (trimmed.endsWith("/api/v1")) {
+    return trimmed;
+  }
+  return `${trimmed}/api/v1`;
+};
+
+const API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
 export const TOKEN_KEY = "lis_token";
 export const USER_KEY = "lis_user";
-const rawMockFlag = import.meta.env.VITE_USE_MOCK_API;
-const USE_MOCK_API = rawMockFlag === "true";
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 20000,
+  timeout: 90000,
 });
 
 apiClient.interceptors.request.use(
@@ -25,26 +35,35 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
+    const detail = error?.response?.data?.detail;
+    let parsedDetail = null;
+
+    if (Array.isArray(detail)) {
+      parsedDetail = detail
+        .map((item) => {
+          if (typeof item === "string") {
+            return item;
+          }
+          const loc = Array.isArray(item?.loc) ? item.loc.join(".") : "";
+          const msg = item?.msg || "";
+          return [loc, msg].filter(Boolean).join(": ");
+        })
+        .filter(Boolean)
+        .join(" | ");
+    } else if (detail && typeof detail === "object") {
+      parsedDetail = detail?.msg || JSON.stringify(detail);
+    } else if (typeof detail === "string") {
+      parsedDetail = detail;
+    }
+
     const message =
-      error?.response?.data?.detail ||
+      parsedDetail ||
       error?.response?.data?.message ||
       error?.message ||
       "Something went wrong. Please try again.";
     return Promise.reject(new Error(message));
   }
 );
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const buildMockUser = (role, email, fullName = "Demo User") => ({
-  id: role === "admin" ? "admin-001" : "lawyer-001",
-  role,
-  email,
-  fullName,
-  barCouncilId: "BCI-2020-9842",
-  courtOfPractice: "Delhi High Court",
-  experience: "8",
-});
 
 const decodeJwtPayload = (token) => {
   try {
@@ -66,25 +85,6 @@ const normalizeRole = (role) => (role === "admin" ? "admin" : "lawyer");
 
 export const login = async ({ email, password, role }) => {
   const requestedRole = normalizeRole(role);
-
-  if (USE_MOCK_API) {
-    await sleep(650);
-
-    if (!email || !password) {
-      throw new Error("Email and password are required.");
-    }
-
-    const mockToken = `mock-jwt-token-${requestedRole}-${Date.now()}`;
-    return {
-      token: mockToken,
-      user: buildMockUser(
-        requestedRole,
-        email,
-        requestedRole === "admin" ? "Admin Console" : "Arjun Mehra"
-      ),
-      expiresIn: 3600,
-    };
-  }
 
   const { data } = await apiClient.post("/auth/login", { email, password });
   const token = data?.access_token;
@@ -108,20 +108,6 @@ export const login = async ({ email, password, role }) => {
 };
 
 export const signup = async (payload) => {
-  if (USE_MOCK_API) {
-    await sleep(700);
-
-    if (!payload?.email || !payload?.password || !payload?.fullName) {
-      throw new Error("Please fill all mandatory fields.");
-    }
-
-    return {
-      token: `mock-jwt-token-lawyer-${Date.now()}`,
-      user: buildMockUser("lawyer", payload.email, payload.fullName),
-      message: "Lawyer account created successfully.",
-    };
-  }
-
   const requestPayload = {
     full_name: payload?.fullName,
     email: payload?.email,
@@ -139,16 +125,14 @@ export const signup = async (payload) => {
 };
 
 export const logout = async () => {
-  if (!USE_MOCK_API) {
-    try {
-      await apiClient.post("/auth/logout");
-    } catch {
-      // Ignore backend logout failure and clear client state.
-    }
+  try {
+    await apiClient.post("/auth/logout");
+  } catch {
+    // Ignore backend logout failure and clear client state.
   }
 
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
 };
 
-export const isMockApiEnabled = USE_MOCK_API;
+export const isMockApiEnabled = false;

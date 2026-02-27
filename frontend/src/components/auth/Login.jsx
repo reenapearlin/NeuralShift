@@ -22,6 +22,14 @@ const Login = ({ role = "lawyer" }) => {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (!form.email || !form.password) {
+      toast.error("Email and password are required.");
+      return;
+    }
+    if (form.password.length < 8) {
+      toast.error("Password must be at least 8 characters.");
+      return;
+    }
     setLoading(true);
 
     try {
@@ -68,6 +76,7 @@ const Login = ({ role = "lawyer" }) => {
               name="email"
               value={form.email}
               onChange={handleChange}
+              required
               className="w-full rounded-lg border border-slate-600 bg-slate-800/60 px-4 py-2.5 text-white outline-none ring-offset-2 ring-offset-slate-900 transition placeholder:text-slate-500 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/30"
               placeholder="name@lawfirm.com"
             />
@@ -80,6 +89,8 @@ const Login = ({ role = "lawyer" }) => {
               name="password"
               value={form.password}
               onChange={handleChange}
+              required
+              minLength={8}
               className="w-full rounded-lg border border-slate-600 bg-slate-800/60 px-4 py-2.5 text-white outline-none ring-offset-2 ring-offset-slate-900 transition placeholder:text-slate-500 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/30"
               placeholder="Enter password"
             />

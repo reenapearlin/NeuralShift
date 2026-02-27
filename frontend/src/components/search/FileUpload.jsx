@@ -16,13 +16,9 @@ const FileUpload = ({ metadata = {}, onUploaded }) => {
       return;
     }
 
-    const allowed = [
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ];
+    const allowed = ["application/pdf"];
     if (!allowed.includes(selectedFile.type)) {
-      toast.error("Only PDF or Word files are allowed.");
+      toast.error("Only PDF files are allowed.");
       return;
     }
 
@@ -94,14 +90,14 @@ const FileUpload = ({ metadata = {}, onUploaded }) => {
           <>
             <UploadCloud className="mx-auto mb-3 h-10 w-10 text-amber-400" />
             <p className="text-sm font-medium text-white">Drag and drop your case file here</p>
-            <p className="mt-1 text-xs text-slate-400">or click to browse • PDF, DOC, DOCX • Max 50MB</p>
+            <p className="mt-1 text-xs text-slate-400">or click to browse • PDF • Max 50MB</p>
           </>
         )}
         <input
           ref={inputRef}
           type="file"
           className="hidden"
-          accept=".pdf,.doc,.docx"
+          accept=".pdf"
           disabled={loading}
           onChange={(event) => handleFileSelect(event.target.files?.[0])}
         />

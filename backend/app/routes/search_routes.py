@@ -43,9 +43,11 @@ class SearchResultsResponse(BaseModel):
 class CaseViewResponse(BaseModel):
     """Structured JSON response for single-case generated analysis."""
 
+    case_title: str
     summary: str
     structured_report: Dict[str, Any]
     pdf_path: Optional[str] = None
+    key_points: list[str] = Field(default_factory=list)
 
 
 def _missing_dependency(name: str) -> Callable[[], Any]:

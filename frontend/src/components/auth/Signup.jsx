@@ -38,7 +38,7 @@ const Signup = () => {
   return (
     <section className="mx-auto w-full max-w-2xl rounded-2xl border border-slate-700/60 bg-slate-900/70 p-8 shadow-2xl backdrop-blur">
       <h1 className="mb-1 text-2xl font-bold text-white">Lawyer Sign Up</h1>
-      <p className="mb-6 text-sm text-slate-300">No verification enabled right now. Enter any details and continue.</p>
+      <p className="mb-6 text-sm text-slate-300">Create your lawyer account to access search and case workflows.</p>
 
       <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="md:col-span-2">
