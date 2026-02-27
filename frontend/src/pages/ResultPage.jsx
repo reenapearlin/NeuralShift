@@ -112,7 +112,13 @@ const ResultPage = () => {
     }
 
     if (activeTab === "file") {
-      return <CaseFileViewer fileUrl={caseData.caseFileUrl} keyPoints={caseData.keyPoints} />;
+      return (
+        <CaseFileViewer
+          fileUrl={caseData.caseFileUrl}
+          sourceUrl={caseData.sourceUrl}
+          keyPoints={caseData.keyPoints}
+        />
+      );
     }
 
     return (
@@ -151,7 +157,13 @@ const ResultPage = () => {
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <button
-            onClick={() => navigate("/search")}
+            onClick={() => {
+              if (window.history.length > 1) {
+                navigate(-1);
+              } else {
+                navigate("/lawyer/dashboard");
+              }
+            }}
             className="flex w-fit items-center gap-2 text-sm font-medium text-slate-400 transition hover:text-amber-400"
           >
             <ArrowLeft className="h-4 w-4" />

@@ -35,6 +35,7 @@ class ScrapedPage:
 
 
 _ROBOTS_CACHE: dict[str, RobotFileParser] = {}
+_ALLOWED_PRECEDENT_HOSTS = {"indiankanoon.org", "www.indiankanoon.org"}
 
 
 def _build_session() -> requests.Session:
@@ -200,6 +201,54 @@ def _fetch_pdf_text(pdf_url: str, session: requests.Session) -> str:
     response = session.get(pdf_url)
     response.raise_for_status()
     return _extract_text_from_pdf_bytes(response.content)
+
+
+def _normalize_host(url: str) -> str:
+    return (urlparse(url).netloc or "").lower().split(":")[0]
+
+
+def _ensure_allowed_precedent_host(url: str) -> None:
+    host = _normalize_host(url)
+    if host not in _ALLOWED_PRECEDENT_HOSTS:
+        raise ValueError("Only Indian Kanoon precedent URLs are supported.")
+
+
+def resolve_pdf_url(url: str) -> str:
+    """Resolve a precedent page URL to a likely PDF endpoint URL."""
+    cleaned = (url or "").strip()
+    if not cleaned:
+        raise ValueError("Missing URL.")
+    _ensure_allowed_precedent_host(cleaned)
+    parsed = urlparse(cleaned)
+    lowered_path = (parsed.path or "").lower()
+    lowered_query = (parsed.query or "").lower()
+
+    if lowered_path.endswith(".pdf") or "type=pdf" in lowered_query:
+        return cleaned
+
+    if "/doc/" in (parsed.path or ""):
+        return f"{cleaned.rstrip('/')}/?type=pdf"
+
+    return cleaned
+
+
+def fetch_pdf_bytes(url: str) -> tuple[str, bytes]:
+    """Fetch PDF bytes for a precedent URL and return (resolved_pdf_url, bytes)."""
+    pdf_url = resolve_pdf_url(url)
+    session = _build_session()
+    if not _is_allowed_by_robots(pdf_url, session):
+        raise ValueError(f"Scraping blocked by robots.txt for URL: {pdf_url}")
+
+    _sleep_with_rate_limit()
+    response = session.get(pdf_url)
+    response.raise_for_status()
+
+    content_type = (response.headers.get("content-type") or "").lower()
+    if "application/pdf" not in content_type and not pdf_url.lower().endswith(".pdf"):
+        # Keep this strict so iframe preview does not render arbitrary pages.
+        raise ValueError("Resolved URL did not return a PDF response.")
+
+    return pdf_url, response.content
 
 
 def scrape_case(url: str) -> ScrapedPage:

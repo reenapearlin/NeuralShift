@@ -10,7 +10,6 @@ import {
   LogOut,
   Sparkles,
   Scale,
-  Clock3,
   ArrowRight,
   Menu,
   X,
@@ -18,9 +17,10 @@ import {
 import { searchCases } from "../../api/searchApi";
 import { useAuth } from "../../context/AuthContext";
 import SearchForm from "../search/SearchForm";
-import Filters from "../search/Filters";
 import FileUpload from "../search/FileUpload";
 import PrecedentChat from "../search/PrecedentChat";
+
+const LAWYER_DASHBOARD_SEARCH_STATE_KEY = "nexorix_lawyer_dashboard_search_state";
 
 const navItems = [
   { key: "dashboard", label: "Overview", icon: LayoutDashboard },
@@ -28,6 +28,25 @@ const navItems = [
   { key: "upload", label: "Upload Case", icon: FolderUp },
   { key: "saved", label: "Saved Cases", icon: Bookmark },
 ];
+
+const defaultQueryState = {
+  chequeAmount: "",
+  reasonForDishonour: "",
+  noticeCompliance: "",
+  limitationPeriod: "",
+  courtLevel: "",
+  freeText: "",
+};
+
+const loadDashboardSearchState = () => {
+  try {
+    const raw = sessionStorage.getItem(LAWYER_DASHBOARD_SEARCH_STATE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+};
 
 const getBookmarksFromStorage = () => {
   try {
@@ -40,22 +59,23 @@ const getBookmarksFromStorage = () => {
 };
 
 const LawyerDashboard = () => {
+  const initialSearchState = loadDashboardSearchState();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
 
-  const [active, setActive] = useState("dashboard");
+  const [active, setActive] = useState(
+    typeof initialSearchState.active === "string" ? initialSearchState.active : "dashboard"
+  );
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [query, setQuery] = useState({
-    chequeAmount: "",
-    reasonForDishonour: "",
-    noticeCompliance: "",
-    limitationPeriod: "",
-    courtLevel: "",
-    freeText: "",
-  });
-  const [filters, setFilters] = useState({ fineAmount: "", jurisdiction: "", ranking: "" });
+  const [query, setQuery] = useState(
+    initialSearchState.query && typeof initialSearchState.query === "object"
+      ? { ...defaultQueryState, ...initialSearchState.query }
+      : defaultQueryState
+  );
   const [loadingSearch, setLoadingSearch] = useState(false);
-  const [results, setResults] = useState([]);
+  const [results, setResults] = useState(
+    Array.isArray(initialSearchState.results) ? initialSearchState.results : []
+  );
   const [savedItems, setSavedItems] = useState([]);
 
   useEffect(() => {
@@ -73,14 +93,27 @@ const LawyerDashboard = () => {
     };
   }, []);
 
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        LAWYER_DASHBOARD_SEARCH_STATE_KEY,
+        JSON.stringify({
+          active,
+          query,
+          results,
+        })
+      );
+    } catch {
+      // Ignore storage write failures and continue with in-memory state.
+    }
+  }, [active, query, results]);
+
   const metrics = useMemo(
     () => [
       { label: "Matched Cases", value: results.length, hint: "From latest search", icon: Scale },
-      { label: "Court", value: user?.courtOfPractice || "Not set", hint: "Primary practice", icon: BriefcaseBusiness },
-      { label: "Experience", value: `${user?.experience || 0} years`, hint: "Professional profile", icon: Clock3 },
       { label: "Saved", value: savedItems.length, hint: "Bookmarked references", icon: Bookmark },
     ],
-    [results.length, savedItems.length, user?.courtOfPractice, user?.experience]
+    [results.length, savedItems.length]
   );
 
   const handleQueryChange = (event) => {
@@ -88,17 +121,12 @@ const LawyerDashboard = () => {
     setQuery((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleFilterChange = (event) => {
-    const { name, value } = event.target;
-    setFilters((prev) => ({ ...prev, [name]: value }));
-  };
-
   const handleSearch = async (event) => {
     event.preventDefault();
     setLoadingSearch(true);
 
     try {
-      const response = await searchCases(query, filters);
+      const response = await searchCases(query, {});
       setResults(response.items || []);
       toast.success(`${response.total || 0} matching cases found`);
     } catch (error) {
@@ -112,6 +140,18 @@ const LawyerDashboard = () => {
     await logout();
     toast.success("Logged out successfully");
     navigate("/");
+  };
+
+  const handleNewSearch = () => {
+    setActive("search");
+    setSidebarOpen(false);
+    setQuery(defaultQueryState);
+    setResults([]);
+    try {
+      sessionStorage.removeItem(LAWYER_DASHBOARD_SEARCH_STATE_KEY);
+    } catch {
+      // Ignore storage removal failures and proceed.
+    }
   };
 
   return (
@@ -203,17 +243,14 @@ const LawyerDashboard = () => {
                   <Sparkles className="h-4 w-4 text-emerald-400" />
                   <span className="text-xs font-semibold uppercase tracking-wide text-emerald-300">Active</span>
                 </div>
-                <h1 className="mt-3 text-3xl font-bold text-white">Section 138 Intelligence</h1>
+                <h1 className="mt-3 text-3xl font-bold text-white">Nexorix Intelligence</h1>
                 <p className="mt-2 text-slate-400">
                   Search legal precedents, analyze cases, and build your legal strategy with AI assistance.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  setActive("search");
-                  setSidebarOpen(false);
-                }}
+                onClick={handleNewSearch}
                 className="hidden rounded-lg bg-gradient-to-r from-amber-400 to-amber-500 px-5 py-2.5 font-semibold text-slate-900 shadow-lg transition hover:shadow-xl sm:block"
               >
                 New Search
@@ -222,7 +259,7 @@ const LawyerDashboard = () => {
           </header>
 
           {/* Metrics */}
-          <section className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <section className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-2">
             {metrics.map((item) => {
               const Icon = item.icon;
               return (
@@ -299,7 +336,6 @@ const LawyerDashboard = () => {
           {active === "search" && (
             <section className="space-y-6">
               <SearchForm form={query} onChange={handleQueryChange} onSubmit={handleSearch} loading={loadingSearch} />
-              <Filters filters={filters} onChange={handleFilterChange} />
               <PrecedentChat />
 
               {/* Results */}

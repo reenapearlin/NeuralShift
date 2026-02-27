@@ -16,7 +16,7 @@ const Home = () => {
           </div>
 
           <h1 className="mb-6 text-4xl font-bold text-white sm:text-5xl lg:text-6xl">
-            SECTION 138
+            Nexorix
             <span className="block bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
               Legal Intelligence System
             </span>
@@ -46,7 +46,7 @@ const Home = () => {
       </section>
 
       <footer className="border-t border-slate-800 bg-slate-950/50 px-4 py-6 text-center text-sm text-slate-400">
-        <p>&copy; 2024 SECTION 138 Legal Intelligence System. All rights reserved.</p>
+        <p>&copy; 2024 Nexorix Legal Intelligence System. All rights reserved.</p>
       </footer>
     </div>
   );

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.config.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
+from app.services.precedent_scraper import fetch_pdf_bytes
 from app.services.precedent_service import get_precedent_view, search_precedents
 
 
@@ -67,3 +68,26 @@ def view_precedent_route(
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Precedent view failed: {exc}") from exc
+
+
+@router.get("/preview")
+def preview_precedent_pdf_route(
+    url: str = Query(..., min_length=8),
+) -> Response:
+    try:
+        resolved_url, pdf_bytes = fetch_pdf_bytes(url=url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Precedent preview failed: {exc}") from exc
+
+    filename = (resolved_url.split("/")[-1] or "precedent.pdf").split("?")[0]
+    if not filename.lower().endswith(".pdf"):
+        filename = f"{filename}.pdf"
+    headers = {
+        "Content-Disposition": f'inline; filename="{filename}"',
+        "Cache-Control": "private, max-age=300",
+    }
+    return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)

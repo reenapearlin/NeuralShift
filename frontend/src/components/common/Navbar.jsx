@@ -10,7 +10,7 @@ const Navbar = () => {
             <Scale className="h-6 w-6 text-slate-900" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-white">SECTION 138</h1>
+            <h1 className="text-lg font-bold text-white">Nexorix</h1>
             <p className="text-xs text-slate-400">Legal Intelligence System</p>
           </div>
         </Link>

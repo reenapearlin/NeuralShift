@@ -9,7 +9,7 @@ const SearchForm = ({ form, onChange, onSubmit, loading }) => {
   return (
     <section className="overflow-hidden rounded-lg border border-slate-700/50 bg-gradient-to-br from-slate-800/50 to-slate-900/50 p-6">
       <div className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-white">Section 138 Advanced Search</h2>
+        <h2 className="mb-2 text-lg font-bold text-white">Nexorix Advanced Search</h2>
         <p className="text-slate-400">Find relevant precedents using detailed case parameters</p>
       </div>
 
