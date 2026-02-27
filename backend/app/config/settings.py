@@ -44,6 +44,12 @@ class Settings:
     )
     PRECEDENT_SEARCH_TOP_N: int = int(os.getenv("PRECEDENT_SEARCH_TOP_N", "5"))
     PRECEDENT_SNIPPET_CHARS: int = int(os.getenv("PRECEDENT_SNIPPET_CHARS", "300"))
+    PRECEDENT_VIEW_CACHE_SECONDS: int = int(
+        os.getenv("PRECEDENT_VIEW_CACHE_SECONDS", "900")
+    )
+    PRECEDENT_VIEW_MAX_CONTEXT_CHARS: int = int(
+        os.getenv("PRECEDENT_VIEW_MAX_CONTEXT_CHARS", "4500")
+    )
 
     @property
     def SQLALCHEMY_DATABASE_URL(self) -> str:

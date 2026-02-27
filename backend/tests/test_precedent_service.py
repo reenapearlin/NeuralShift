@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import Mock, patch
 
+from app.services import precedent_service
 from app.services.precedent_service import get_precedent_view, search_precedents
 
 
@@ -31,6 +32,9 @@ class _FakeEmbeddingModel:
 
 
 class TestPrecedentService(unittest.TestCase):
+    def setUp(self) -> None:
+        precedent_service._PRECEDENT_VIEW_CACHE.clear()
+
     @patch("app.services.precedent_service.get_embedding_model")
     @patch("app.services.precedent_service.get_or_scrape")
     @patch("app.services.precedent_service.search_case_links")
@@ -80,7 +84,6 @@ class TestPrecedentService(unittest.TestCase):
         self.assertEqual(response["query"], "section 138")
         self.assertEqual(response["results"], [])
 
-    @patch("app.services.precedent_service.get_embedding_model")
     @patch("app.services.precedent_service.extract_legal_keywords")
     @patch("app.services.precedent_service.generate_structured_report")
     @patch("app.services.precedent_service.generate_summary")
@@ -91,7 +94,6 @@ class TestPrecedentService(unittest.TestCase):
         mock_generate_summary: Mock,
         mock_generate_structured_report: Mock,
         mock_extract_legal_keywords: Mock,
-        mock_get_embedding_model: Mock,
     ) -> None:
         db = Mock()
         fake_query = Mock()
@@ -117,7 +119,6 @@ class TestPrecedentService(unittest.TestCase):
             "key_principles": ["Dishonour of cheque"],
         }
         mock_extract_legal_keywords.return_value = ["Section 138", "Dishonour Of Cheque"]
-        mock_get_embedding_model.return_value = _FakeEmbeddingModel()
 
         payload = get_precedent_view(db=db, url="https://indiankanoon.org/doc/12345/")
 
@@ -128,6 +129,46 @@ class TestPrecedentService(unittest.TestCase):
         self.assertEqual(payload["source_url"], "https://indiankanoon.org/doc/12345/")
         self.assertTrue(db.add.called)
         self.assertTrue(db.commit.called)
+
+    @patch("app.services.precedent_service.extract_legal_keywords")
+    @patch("app.services.precedent_service.generate_structured_report")
+    @patch("app.services.precedent_service.generate_summary")
+    @patch("app.services.precedent_service.scrape_case")
+    def test_precedent_view_uses_cached_row_without_rescrape(
+        self,
+        mock_scrape_case: Mock,
+        mock_generate_summary: Mock,
+        mock_generate_structured_report: Mock,
+        mock_extract_legal_keywords: Mock,
+    ) -> None:
+        db = Mock()
+        fake_query = Mock()
+        fake_query.first.return_value = _Row(
+            url="https://indiankanoon.org/doc/555/",
+            title="Cached Row",
+            raw_text="Cached section 138 analysis text",
+        )
+        db.query.return_value.filter.return_value = fake_query
+
+        mock_generate_summary.return_value = "Facts: cached"
+        mock_generate_structured_report.return_value = {
+            "case_title": "Cached Row",
+            "court": "Not Specified",
+            "legal_issue": "Not Specified",
+            "relevant_sections": ["Section 138"],
+            "limitation_analysis": "Not Specified",
+            "penalty": "Not Specified",
+            "judgement": "Not Specified",
+            "key_principles": ["Cheque dishonour"],
+        }
+        mock_extract_legal_keywords.return_value = ["Section 138"]
+
+        payload = get_precedent_view(db=db, url="https://indiankanoon.org/doc/555/")
+
+        self.assertEqual(payload["case_title"], "Cached Row")
+        self.assertEqual(payload["pdf_path"], "https://indiankanoon.org/doc/555/?type=pdf")
+        self.assertEqual(payload["highlighted_keywords"], ["Section 138"])
+        mock_scrape_case.assert_not_called()
 
 
 if __name__ == "__main__":

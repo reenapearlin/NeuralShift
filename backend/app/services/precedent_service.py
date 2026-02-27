@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 import math
 import re
+from threading import Lock
 from typing import Any, Optional
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -14,6 +17,9 @@ from app.models.scraped_case import ScrapedCase
 from app.rag.rag_chain import extract_legal_keywords, generate_structured_report, generate_summary
 from app.rag.embeddings import get_embedding_model
 from app.services.precedent_scraper import get_or_scrape, scrape_case, search_case_links
+
+_PRECEDENT_VIEW_CACHE: dict[str, tuple[datetime, dict[str, Any]]] = {}
+_PRECEDENT_VIEW_CACHE_LOCK = Lock()
 
 
 def _cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
@@ -174,26 +180,70 @@ def _ensure_case_embedding(raw_text: str, existing: Optional[list[float]], embed
     return _mean_vector(chunk_vectors)
 
 
-def _build_rag_context(case_text: str, query: str, embedding_model: Any) -> str:
-    """Select the most query-relevant chunks for downstream generation."""
-    chunks = _chunk_text(case_text)
-    if not chunks:
-        return ""
+def _generation_context(text: str, max_chars: int) -> str:
+    compact = " ".join((text or "").split())
+    return compact[:max_chars]
 
-    limited_chunks = chunks[:30]
-    try:
-        query_vector = embedding_model.embed_query((query or "section 138 cheque dishonour precedent").strip())
-        chunk_vectors = embedding_model.embed_documents(limited_chunks)
-    except Exception:
-        return " ".join(limited_chunks[:6])[:7000]
 
-    scored: list[tuple[float, str]] = []
-    for chunk, vec in zip(limited_chunks, chunk_vectors):
-        score = _cosine_similarity(query_vector, vec if isinstance(vec, list) else [])
-        scored.append((score, chunk))
-    scored.sort(key=lambda item: item[0], reverse=True)
-    top_chunks = [item[1] for item in scored[:6]]
-    return " ".join(top_chunks)[:7000]
+def _derive_pdf_path(source_url: str, scraped_pdf_url: Optional[str]) -> str:
+    if scraped_pdf_url:
+        return scraped_pdf_url
+    if "/doc/" in (source_url or ""):
+        return f"{source_url.rstrip('/')}/?type=pdf"
+    return source_url
+
+
+def _get_cached_precedent_view(url: str) -> Optional[dict[str, Any]]:
+    now = datetime.now(timezone.utc)
+    with _PRECEDENT_VIEW_CACHE_LOCK:
+        cached = _PRECEDENT_VIEW_CACHE.get(url)
+        if cached is None:
+            return None
+        expires_at, payload = cached
+        if expires_at <= now:
+            _PRECEDENT_VIEW_CACHE.pop(url, None)
+            return None
+        return payload
+
+
+def _set_cached_precedent_view(url: str, payload: dict[str, Any]) -> None:
+    settings = get_settings()
+    ttl_seconds = max(int(settings.PRECEDENT_VIEW_CACHE_SECONDS), 1)
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+    with _PRECEDENT_VIEW_CACHE_LOCK:
+        _PRECEDENT_VIEW_CACHE[url] = (expires_at, payload)
+
+
+def _generate_view_outputs(text_for_generation: str) -> tuple[Optional[str], Optional[dict[str, Any]], Optional[list[str]]]:
+    def _safe_summary() -> Optional[str]:
+        try:
+            return generate_summary(text_for_generation)
+        except Exception:
+            return None
+
+    def _safe_report() -> Optional[dict[str, Any]]:
+        try:
+            value = generate_structured_report(text_for_generation)
+            return value if isinstance(value, dict) else None
+        except Exception:
+            return None
+
+    def _safe_keywords() -> Optional[list[str]]:
+        try:
+            value = extract_legal_keywords(text_for_generation)
+            return value if isinstance(value, list) else None
+        except Exception:
+            return None
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        summary_future = executor.submit(_safe_summary)
+        report_future = executor.submit(_safe_report)
+        keywords_future = executor.submit(_safe_keywords)
+        return (
+            summary_future.result(),
+            report_future.result(),
+            keywords_future.result(),
+        )
 
 
 def search_precedents(db: Session, query: str, top_n: Optional[int] = None) -> dict[str, Any]:
@@ -260,12 +310,18 @@ def get_precedent_view(db: Session, url: str) -> dict[str, Any]:
             "source_url": "",
         }
 
+    cached_payload = _get_cached_precedent_view(cleaned_url)
+    if cached_payload is not None:
+        return cached_payload
+
     row = db.query(ScrapedCase).filter(ScrapedCase.url == cleaned_url).first()
     scraped_page = None
-    try:
-        scraped_page = scrape_case(cleaned_url)
-    except Exception:
-        scraped_page = None
+    should_scrape = row is None or not (row.raw_text or "").strip()
+    if should_scrape:
+        try:
+            scraped_page = scrape_case(cleaned_url)
+        except Exception:
+            scraped_page = None
 
     if row is None and scraped_page is None:
         try:
@@ -295,21 +351,9 @@ def get_precedent_view(db: Session, url: str) -> dict[str, Any]:
     if not case_text:
         return _minimal_precedent_payload(row.url, row.title or "Web Precedent")
 
-    embedding_model = get_embedding_model()
-    rag_context = _build_rag_context(case_text=case_text, query="section 138 cheque dishonour precedent", embedding_model=embedding_model)
-    reduced_text = rag_context or case_text[:7000]
-    try:
-        summary = generate_summary(reduced_text)
-    except Exception:
-        summary = None
-    try:
-        structured_report = generate_structured_report(reduced_text)
-    except Exception:
-        structured_report = None
-    try:
-        keywords = extract_legal_keywords(reduced_text)
-    except Exception:
-        keywords = None
+    settings = get_settings()
+    reduced_text = _generation_context(case_text, settings.PRECEDENT_VIEW_MAX_CONTEXT_CHARS)
+    summary, structured_report, keywords = _generate_view_outputs(reduced_text)
 
     if not isinstance(summary, str) or not summary.strip():
         summary = _fallback_summary(case_text)
@@ -321,12 +365,14 @@ def get_precedent_view(db: Session, url: str) -> dict[str, Any]:
 
     case_title = row.title or structured_report.get("case_title") or "Not Specified"
     highlighted_keywords = keywords[:8]
-    return {
+    payload = {
         "case_title": case_title,
         "summary": summary,
         "structured_report": structured_report,
-        "pdf_path": (scraped_page.pdf_url if scraped_page else None) or row.url,
+        "pdf_path": _derive_pdf_path(row.url, scraped_page.pdf_url if scraped_page else None),
         "key_points": highlighted_keywords,
         "highlighted_keywords": highlighted_keywords,
         "source_url": row.url,
     }
+    _set_cached_precedent_view(cleaned_url, payload)
+    return payload
