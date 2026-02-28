@@ -12,10 +12,9 @@ import {
   X,
   CheckCircle,
   XCircle,
-  Send,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
-import { approveCase, fetchAdminStats, fetchPendingCases, rejectCase } from "../../api/adminApi";
+import { approveCase, fetchAdminStats, fetchLawyers, fetchPendingCases, rejectCase } from "../../api/adminApi";
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -29,12 +28,15 @@ const AdminDashboard = () => {
     total_cases: 0,
   });
   const [pendingUploads, setPendingUploads] = useState([]);
+  const [lawyers, setLawyers] = useState([]);
   const [loadingCases, setLoadingCases] = useState(false);
+  const [loadingLawyers, setLoadingLawyers] = useState(false);
 
   const loadDashboardData = async () => {
     setLoadingCases(true);
+    setLoadingLawyers(true);
     try {
-      const [stats, pending] = await Promise.all([fetchAdminStats(), fetchPendingCases()]);
+      const [stats, pending, lawyerRows] = await Promise.all([fetchAdminStats(), fetchPendingCases(), fetchLawyers()]);
       setStatsData({
         total_lawyers: stats?.total_lawyers || 0,
         pending_cases: stats?.pending_cases || 0,
@@ -42,10 +44,12 @@ const AdminDashboard = () => {
         total_cases: stats?.total_cases || 0,
       });
       setPendingUploads(pending);
+      setLawyers(lawyerRows);
     } catch (error) {
       toast.error(error.message);
     } finally {
       setLoadingCases(false);
+      setLoadingLawyers(false);
     }
   };
 
@@ -67,8 +71,6 @@ const AdminDashboard = () => {
     { key: "dashboard", label: "Dashboard", icon: Shield },
     { key: "lawyers", label: "Manage Lawyers", icon: Users },
     { key: "cases", label: "Review Cases", icon: FileClock },
-    { key: "publish", label: "Publish Cases", icon: Send },
-    { key: "stats", label: "System Stats", icon: Database },
   ];
 
   const handleLogout = async () => {
@@ -96,8 +98,6 @@ const AdminDashboard = () => {
       toast.error(error.message);
     }
   };
-
-  const handlePublish = async (id) => handleApprove(id);
 
   return (
     <div className="relative min-h-screen bg-slate-950 text-slate-100">
@@ -299,11 +299,11 @@ const AdminDashboard = () => {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => handlePublish(item.id)}
+                                onClick={() => handleApprove(item.id)}
                                 className="rounded-lg bg-blue-500/20 p-1.5 text-blue-400 transition hover:bg-blue-500/30"
                                 title="Publish"
                               >
-                                <Send className="h-4 w-4" />
+                                <FileCheck className="h-4 w-4" />
                               </button>
                             </div>
                           </td>
@@ -322,15 +322,64 @@ const AdminDashboard = () => {
             </section>
           )}
 
-          {/* Other Tabs */}
-          {(activeTab === "lawyers" || activeTab === "publish" || activeTab === "stats") && (
-            <section className="rounded-lg border border-slate-700/50 bg-gradient-to-br from-slate-800/50 to-slate-900/50 p-6">
-              <h3 className="text-lg font-bold text-white">
-                {activeTab === "lawyers" && "Manage Lawyers"}
-                {activeTab === "publish" && "Publish Cases"}
-                {activeTab === "stats" && "System Statistics"}
-              </h3>
-              <p className="mt-2 text-slate-400">This section is coming soon in the next update.</p>
+          {/* Manage Lawyers Tab */}
+          {activeTab === "lawyers" && (
+            <section className="space-y-6">
+              <article className="rounded-lg border border-slate-700/50 bg-gradient-to-br from-slate-800/50 to-slate-900/50 p-6">
+                <h3 className="mb-1 text-lg font-bold text-white">Manage Lawyers</h3>
+                <p className="mb-6 text-slate-400">Registered lawyers in the system</p>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-700/50 bg-slate-800/30">
+                        <th className="px-4 py-3 text-left font-semibold text-slate-300">Lawyer ID</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-300">Name</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-300">Email</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-300">Status</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-300">Registered On</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lawyers.map((item) => (
+                        <tr
+                          key={item.id}
+                          className="border-b border-slate-700/30 transition hover:bg-slate-800/20"
+                        >
+                          <td className="px-4 py-3">
+                            <code className="rounded bg-slate-800 px-2 py-1 text-xs font-mono text-blue-400">
+                              #{item.id}
+                            </code>
+                          </td>
+                          <td className="px-4 py-3 text-white">{item.full_name || "N/A"}</td>
+                          <td className="px-4 py-3 text-slate-300">{item.email || "N/A"}</td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                                item.is_active
+                                  ? "bg-emerald-400/10 text-emerald-400"
+                                  : "bg-red-400/10 text-red-400"
+                              }`}
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                              {item.is_active ? "ACTIVE" : "INACTIVE"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-slate-400">
+                            {item.created_at ? new Date(item.created_at).toLocaleDateString() : "N/A"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {loadingLawyers && (
+                    <p className="mt-4 text-sm text-slate-400">Loading lawyers...</p>
+                  )}
+                  {!loadingLawyers && lawyers.length === 0 && (
+                    <p className="mt-4 text-sm text-slate-400">No registered lawyers found.</p>
+                  )}
+                </div>
+              </article>
             </section>
           )}
         </main>

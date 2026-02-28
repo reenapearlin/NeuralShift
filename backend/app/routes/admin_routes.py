@@ -67,6 +67,33 @@ def list_cases(
     }
 
 
+@router.get("/lawyers")
+def list_lawyers(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    rows = (
+        db.query(User)
+        .filter(User.role == UserRole.LAWYER)
+        .order_by(User.created_at.desc())
+        .limit(500)
+        .all()
+    )
+    return {
+        "count": len(rows),
+        "items": [
+            {
+                "id": row.id,
+                "full_name": row.full_name,
+                "email": row.email,
+                "is_active": bool(row.is_active),
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in rows
+        ],
+    }
+
+
 @router.put("/approve/{case_id}")
 def approve_case(
     case_id: int,

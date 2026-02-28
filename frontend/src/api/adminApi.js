@@ -12,6 +12,11 @@ export const fetchPendingCases = async () => {
   return Array.isArray(data?.items) ? data.items : [];
 };
 
+export const fetchLawyers = async () => {
+  const { data } = await apiClient.get("/admin/lawyers");
+  return Array.isArray(data?.items) ? data.items : [];
+};
+
 export const approveCase = async (caseId) => {
   const { data } = await apiClient.put(`/admin/approve/${caseId}`);
   return data;
