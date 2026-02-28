@@ -141,7 +141,7 @@ def generate_structured_report(case_text: str) -> dict[str, object]:
         parsed = _retry_structured_report_json(llm=llm, raw_output=raw_output)
     if parsed is None:
         raise RAGConfigError("Structured report is not valid JSON.")
-    normalized = _normalize_structured_report(parsed)
+    normalized = _normalize_structured_report(parsed=parsed, case_text=case_text)
     return normalized
 
 
@@ -251,7 +251,7 @@ def _retry_structured_report_json(llm: object, raw_output: str) -> dict[str, obj
     return _parse_json_object(fixed_output)
 
 
-def _normalize_structured_report(parsed: dict[str, object]) -> dict[str, object]:
+def _normalize_structured_report(parsed: dict[str, object], case_text: str) -> dict[str, object]:
     """Ensure structured report has exact required keys and value types."""
     report: dict[str, object] = {
         "case_title": "Not Specified",
@@ -275,7 +275,47 @@ def _normalize_structured_report(parsed: dict[str, object]) -> dict[str, object]
             text = "" if value is None else str(value).strip()
             report[key] = text if text else "Not Specified"
 
+    # Enforce court extraction from case text only.
+    extracted_court = _extract_court_from_case_text(case_text)
+    report["court"] = extracted_court or "Not Specified"
+
     return report
+
+
+def _extract_court_from_case_text(case_text: str) -> str:
+    """Extract court name only from the case text content."""
+    text = (case_text or "").strip()
+    if not text:
+        return ""
+
+    # Restrict matching to initial segment where court headers usually appear.
+    head = text[:4000]
+
+    patterns = [
+        r"\bSupreme Court of India\b",
+        r"\bHigh Court of [A-Za-z .&()'-]{2,80}\b",
+        r"\b[A-Za-z .&()'-]{2,80} High Court\b",
+        r"\bDistrict Court(?: of [A-Za-z .&()'-]{2,80})?\b",
+        r"\bSessions Court(?: of [A-Za-z .&()'-]{2,80})?\b",
+        r"\bCourt of [A-Za-z .&()'-]{2,80}\b",
+        r"\bNational Company Law Tribunal\b",
+        r"\bNational Company Law Appellate Tribunal\b",
+        r"\bIncome Tax Appellate Tribunal\b",
+        r"\bCentral Administrative Tribunal\b",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, head, flags=re.IGNORECASE)
+        if not match:
+            continue
+        value = re.sub(r"\s+", " ", match.group(0)).strip(" ,.;:-")
+        # Reject obvious non-court source labels.
+        lowered = value.lower()
+        if "indiankanoon" in lowered or lowered.startswith("http") or "www." in lowered:
+            continue
+        return value
+
+    return ""
 
 
 def _parse_python_list_of_strings(raw_output: str) -> list[str]:

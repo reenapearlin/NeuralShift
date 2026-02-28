@@ -41,6 +41,8 @@ STRUCTURED_REPORT_PROMPT = PromptTemplate(
         "   - all other fields: string\n"
         '5. If a field is not found, use "Not Specified".\n'
         '6. If list fields are not found, use ["Not Specified"].\n\n'
+        '7. "court" must be the actual court/forum name explicitly present in the case text only.\n'
+        '   Never use website/source names, URLs, or platform labels as court.\n\n'
         "Return JSON in this exact schema:\n"
         "{{\n"
         '  "case_title": "string",\n'

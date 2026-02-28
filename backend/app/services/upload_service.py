@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.config.settings import get_settings
 from app.models.casefile import CaseFile
+from app.models.metadata import CaseMetadata
 from app.models.enums import CaseStatus
+from app.utils.file_parser import extract_text_from_pdf
 
 
 def _safe_filename(filename: str) -> str:
@@ -46,9 +48,13 @@ def save_uploaded_file(file: UploadFile, db: Session, uploaded_by: int) -> dict[
         relative_path = f"casefiles/{target.name}"
         case_title = Path(file.filename).stem.replace("_", " ").strip()
 
+        extracted_text = extract_text_from_pdf(str(target))
+
         new_case = CaseFile(
             case_title=case_title,
+            filename=target.name,
             file_path=relative_path,
+            extracted_text=extracted_text or None,
             status=CaseStatus.PENDING,
             uploaded_by=uploaded_by,
         )
@@ -56,6 +62,20 @@ def save_uploaded_file(file: UploadFile, db: Session, uploaded_by: int) -> dict[
         db.add(new_case)
         db.commit()
         db.refresh(new_case)
+
+        metadata_rows = [
+            CaseMetadata(casefile_id=new_case.id, meta_key="file_path", meta_value=relative_path),
+            CaseMetadata(casefile_id=new_case.id, meta_key="filename", meta_value=target.name),
+            CaseMetadata(casefile_id=new_case.id, meta_key="status", meta_value=new_case.status.value),
+            CaseMetadata(casefile_id=new_case.id, meta_key="uploaded_by", meta_value=str(uploaded_by)),
+            CaseMetadata(
+                casefile_id=new_case.id,
+                meta_key="text_chars",
+                meta_value=str(len(extracted_text or "")),
+            ),
+        ]
+        db.add_all(metadata_rows)
+        db.commit()
 
         return {
             "case_id": new_case.id,

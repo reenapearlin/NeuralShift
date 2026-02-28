@@ -8,6 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.models.casefile import CaseFile
 from app.models.enums import CaseStatus
+from app.models.enums import UserRole
+from app.models.report import Report
+from app.models.user import User
 from app.rag.rag_chain import generate_structured_report, generate_summary
 
 
@@ -35,7 +38,21 @@ def _generate_case_report_payload(case_text: str) -> dict[str, str]:
     }
 
 
-def generate_pdf_report(case_id: int, db: Session) -> dict[str, str]:
+def _resolve_report_generator(case: CaseFile, db: Session) -> int:
+    if case.reviewed_by:
+        return int(case.reviewed_by)
+    if case.uploaded_by:
+        return int(case.uploaded_by)
+    admin = db.query(User).filter(User.role == UserRole.ADMIN).order_by(User.id.asc()).first()
+    if admin:
+        return int(admin.id)
+    any_user = db.query(User).order_by(User.id.asc()).first()
+    if any_user:
+        return int(any_user.id)
+    raise HTTPException(status_code=400, detail="No user available to assign report generator.")
+
+
+def generate_pdf_report(case_id: int, db: Session) -> dict[str, str | int]:
 
     case = db.query(CaseFile).filter(CaseFile.id == case_id).first()
 
@@ -86,4 +103,22 @@ def generate_pdf_report(case_id: int, db: Session) -> dict[str, str]:
 
     doc.build(elements)
 
-    return {"report_file": file_name, "download_path": f"/reports/{file_name}"}
+    report_row = Report(
+        casefile_id=case.id,
+        generated_by=_resolve_report_generator(case=case, db=db),
+        title=f"Case Report #{case.id}",
+        content=(
+            f"Summary:\n{ai_output['summary']}\n\n"
+            f"Legal Points:\n{ai_output['legal_points']}\n\n"
+            f"Risk Analysis:\n{ai_output['risk_analysis']}"
+        ),
+    )
+    db.add(report_row)
+    db.commit()
+    db.refresh(report_row)
+
+    return {
+        "report_id": report_row.id,
+        "report_file": file_name,
+        "download_path": f"/reports/{file_name}",
+    }

@@ -10,7 +10,9 @@ from app.config.settings import get_settings
 from app.models import casefile, logs, metadata, report, user  # noqa: F401
 from app.models.casefile import CaseFile
 from app.models.enums import CaseStatus
+from app.models.metadata import CaseMetadata
 from app.models.user import User
+from app.utils.file_parser import extract_text_from_pdf
 
 
 def slugify_filename(filename: str) -> str:
@@ -73,13 +75,30 @@ def import_casefiles(source_dir: Path, uploader_email: str) -> None:
                 copied += 1
 
             case_title = src.stem.replace("_", " ").strip()
+            extracted_text = extract_text_from_pdf(str(target))
             record = CaseFile(
                 case_title=case_title,
+                filename=target.name,
                 file_path=relative_path,
+                extracted_text=extracted_text or None,
                 status=CaseStatus.PENDING,
                 uploaded_by=uploader.id,
             )
             db.add(record)
+            db.flush()
+            db.add_all(
+                [
+                    CaseMetadata(casefile_id=record.id, meta_key="file_path", meta_value=relative_path),
+                    CaseMetadata(casefile_id=record.id, meta_key="filename", meta_value=target.name),
+                    CaseMetadata(casefile_id=record.id, meta_key="status", meta_value=record.status.value),
+                    CaseMetadata(casefile_id=record.id, meta_key="uploaded_by", meta_value=str(uploader.id)),
+                    CaseMetadata(
+                        casefile_id=record.id,
+                        meta_key="text_chars",
+                        meta_value=str(len(extracted_text or "")),
+                    ),
+                ]
+            )
             imported += 1
 
         db.commit()
